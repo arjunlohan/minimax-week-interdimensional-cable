@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import { MissingApiKeyError, resolveGmiKey } from "@/app/lib/api-keys";
 import { generateJson } from "@/app/lib/gmi/text";
 import { gatherSourcesDetailed } from "@/app/lib/research/sources";
@@ -377,6 +379,25 @@ export function enforceSourceCitations(facts: GroundedFact[], sources: ResearchS
 // Pass 1 Main Runner
 // ─────────────────────────────────────────────────────────────────────────────
 
+const SearchQueriesSchema = z.object({ queries: z.array(z.string().min(2).max(80)).min(1).max(4) });
+
+/**
+ * Hacker News search matches headlines, not sentences. When the heuristic
+ * shortenings of the topic find nothing, MiniMax-M3 phrases three searches the
+ * way a story about the topic would have been titled.
+ */
+export async function suggestSearchQueries(topic: string): Promise<string[]> {
+  const { queries } = await generateJson({
+    label: "pass1-search-queries",
+    schema: SearchQueriesSchema,
+    system: "You write terse search queries for Hacker News. Reply with JSON only.",
+    prompt: `Topic: "${topic}"\n\nReturn {"queries": [...]}: three searches of two to four words each that a Hacker News story about this topic would match. Use the concrete nouns (products, techniques, companies, events), not adjectives or framing words.`,
+    temperature: 0.3,
+    maxOutputTokens: 8192,
+  });
+  return queries;
+}
+
 export async function runPass1Research(
   input: Pass1ResearchInput,
 ): Promise<Pass1ResearchOutput> {
@@ -401,7 +422,9 @@ export async function runPass1Research(
   }
 
   const enableSearch = input.options?.enableSearch !== false;
-  const gathered = enableSearch ? await gatherSourcesDetailed(input.topic) : { sources: [], queriesTried: [] };
+  const gathered = enableSearch ?
+      await gatherSourcesDetailed(input.topic, { suggestQueries: suggestSearchQueries }) :
+      { sources: [], queriesTried: [] };
   const sources = gathered.sources;
 
   const userPrompt = `TOPIC TO INVESTIGATE: "${input.topic}"

@@ -52,8 +52,8 @@ describe("output token budgets", () => {
   }
 
   it("sets a budget everywhere a model is called", () => {
-    // pass 1 brief, pass 2 desk draft, pass 2 podcast draft, pass 3 punch-up, pass 3 runtime fit
-    expect(found.length).toBe(5);
+    // pass 1 brief, pass 1 search queries, pass 2 desk draft, pass 2 podcast draft, pass 3 punch-up, pass 3 runtime fit
+    expect(found.length).toBe(6);
   });
 
   it("never budgets below what the model spends thinking", () => {
@@ -70,8 +70,10 @@ describe("output token budgets", () => {
     }
   });
 
-  it("gives the research and scripting passes the full ceiling", () => {
-    const heavy = found.filter(f => f.file.includes("pass1-research") || f.file.includes("pass2-head-writer"));
+  it("gives the research brief and the scripting drafts the full ceiling", () => {
+    // The brief and the two drafts are the long outputs; pass 1's search-query
+    // suggestion is a one-line reply and deliberately stays small.
+    const heavy = found.filter(f => (f.file.includes("pass1-research") || f.file.includes("pass2-head-writer")) && f.value >= 32_768);
     expect(heavy.length).toBe(3);
     heavy.forEach(h => expect(h.value).toBe(VERIFIED_MODEL_CEILING));
   });

@@ -25,6 +25,11 @@ export interface ResearchSource {
 }
 
 export interface GatherSourcesOptions {
+  /**
+   * Asked for extra search queries when none of the heuristic ones finds a
+   * linked story. Pass 1 supplies MiniMax-M3 here; tests leave it unset.
+   */
+  suggestQueries?: (topic: string) => Promise<string[]>;
   /** Article pages to keep (default 3). */
   maxSources?: number;
   /** Characters of readable text kept per page (default 6000). */
@@ -213,7 +218,43 @@ const STOPWORDS = new Set([
   "little",
   "plotting",
   "kitchen",
+  // Topic filler that never appears in a headline.
+  "strangest",
+  "strange",
+  "strangely",
+  "weird",
+  "weirdest",
+  "wild",
+  "wildest",
+  "crazy",
+  "craziest",
+  "true",
+  "truth",
+  "things",
+  "thing",
+  "facts",
+  "fact",
+  "stuff",
+  "actually",
+  "secretly",
+  "surprising",
+  "surprisingly",
+  "story",
+  "stories",
+  "behind",
+  "inside",
+  "explained",
+  "everything",
+  "nobody",
+  "everyone",
+  "tells",
+  "tell",
+  "know",
+  "knows",
 ]);
+
+/** Short tokens worth keeping even though they fail the length check. */
+const SHORT_KEEP = new Set(["ai", "ml", "vr", "ar", "3d", "5g", "gpu", "llm", "api", "ios", "cpu", "nft", "ceo", "eu", "us", "uk"]);
 
 /**
  * Search queries to try, most specific first. A full sentence rarely matches a
@@ -227,7 +268,7 @@ export function searchQueryCandidates(topic: string): string[] {
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, " ")
     .split(/\s+/)
-    .filter(w => w.length > 2 && !STOPWORDS.has(w));
+    .filter(w => (w.length > 2 || SHORT_KEEP.has(w)) && !STOPWORDS.has(w));
   const compact = words.slice(0, 5).join(" ");
   const shortest = words.slice(0, 3).join(" ");
   const seen = new Set<string>();
@@ -340,7 +381,13 @@ export async function gatherSourcesDetailed(topic: string, options: GatherSource
   const seen = new Set<string>();
   const candidates: Array<{ title: string; url: string; points?: number }> = [];
   let query = "";
-  for (const candidateQuery of searchQueryCandidates(topic)) {
+  const queue = searchQueryCandidates(topic);
+  let askedModel = false;
+  while (queue.length > 0) {
+    const candidateQuery = queue.shift()!;
+    if (queriesTried.some(q => q.toLowerCase() === candidateQuery.toLowerCase())) {
+      continue;
+    }
     queriesTried.push(candidateQuery);
     for (const hit of await searchHackerNews(candidateQuery, timeoutMs)) {
       const url = typeof hit.url === "string" ? hit.url.trim() : "";
@@ -357,6 +404,19 @@ export async function gatherSourcesDetailed(topic: string, options: GatherSource
     if (candidates.length > 0) {
       query = candidateQuery;
       break;
+    }
+    // Heuristics exhausted: let the model phrase the search the way a headline would.
+    if (queue.length === 0 && !askedModel && options.suggestQueries) {
+      askedModel = true;
+      try {
+        const suggested = (await options.suggestQueries(topic))
+          .map(q => q.replace(/\s+/g, " ").trim().slice(0, 80))
+          .filter(q => q.length > 0)
+          .slice(0, 4);
+        queue.push(...suggested);
+      } catch (err) {
+        console.warn(`[research:sources] query suggestion failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
   }
   if (candidates.length === 0) {
