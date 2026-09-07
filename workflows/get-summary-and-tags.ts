@@ -124,7 +124,21 @@ export async function getSummaryAndTagsWorkflow(
     await prepareSummaryStep(progress, assetId);
     completedSteps.push("prepare");
 
-    const result = await generateSummaryAndTagsStep(progress, assetId, options);
+    const outcome = await generateSummaryAndTagsStep(progress, assetId, options);
+    if ("failure" in outcome) {
+      try {
+        await closeStream(progress);
+      } catch {
+        // ignore - stream may already be closed or in an invalid state
+      }
+      return {
+        success: false,
+        currentStep: "generate",
+        completedSteps,
+        error: outcome.failure,
+      };
+    }
+    const result = outcome;
     completedSteps.push("generate");
 
     await finalizeSummaryStep(progress);
@@ -204,14 +218,35 @@ async function loadTranscript(assetId: string): Promise<{ text: string; source: 
   return { text: fetched, source: "mux" };
 }
 
+/**
+ * A failure the step reports as a value rather than by throwing: a missing
+ * transcript or a model refusal is deterministic, so retrying it four times
+ * only delays the message, and an error thrown across the step boundary
+ * reaches the workflow without its text.
+ */
+type SummaryStepOutcome = GetSummaryAndTagsResult | { failure: string };
+
 async function generateSummaryAndTagsStep(
   progress: WritableStream<SummaryProgressEvent>,
   assetId: string,
   options?: GetSummaryAndTagsOptions,
-): Promise<GetSummaryAndTagsResult> {
+): Promise<SummaryStepOutcome> {
   "use step";
   await writeToStream(progress, { type: "current", step: "generate" });
+  try {
+    return await summarize(progress, assetId, options);
+  } catch (err) {
+    const failure = err instanceof Error ? err.message : String(err);
+    console.error("[summary] generation failed:", failure);
+    return { failure };
+  }
+}
 
+async function summarize(
+  progress: WritableStream<SummaryProgressEvent>,
+  assetId: string,
+  options?: GetSummaryAndTagsOptions,
+): Promise<GetSummaryAndTagsResult> {
   const tone: SummaryTone = options?.tone ?? "neutral";
   const transcript = await loadTranscript(assetId);
   const transcriptText = transcript.text.length > MAX_TRANSCRIPT_CHARS ?
@@ -226,7 +261,8 @@ async function generateSummaryAndTagsStep(
     system,
     prompt,
     temperature: tone === "playful" ? 0.8 : 0.4,
-    maxOutputTokens: 2048,
+    // M3 thinks before it answers and that draws on the same budget.
+    maxOutputTokens: 8192,
   });
 
   const tags = [...new Set(generated.tags.map(t => t.toLowerCase()))].slice(0, SUMMARY_TAG_LIMIT);
