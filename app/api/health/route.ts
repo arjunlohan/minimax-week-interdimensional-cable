@@ -48,6 +48,19 @@ export async function GET() {
   const configuredNames = Object.keys(process.env)
     .filter(name => /URL|MUX|GMI|KEY|SECRET|POSTGRES|PGHOST|PGUSER|PGDATABASE|H3_/i.test(name) && !/^(npm_|NEXT_|__)/.test(name))
     .sort();
+  // Shape only, never the value: defined or not, length, and whether the
+  // database URL even starts like one. Tells a blank variable from a wrong one.
+  const shape = Object.fromEntries(
+    [...REQUIRED, ...OPTIONAL].map((name) => {
+      const value = process.env[name];
+      return [name, {
+        defined: value !== undefined,
+        length: value?.length ?? 0,
+        trimmedLength: value?.trim().length ?? 0,
+        ...(name === "DATABASE_URL" ? { startsWithPostgres: /^postgres(ql)?:\/\//.test(value?.trim() ?? "") } : {}),
+      }];
+    }),
+  );
   const deployment = {
     environment: process.env.VERCEL_ENV ?? "local",
     commit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? null,
@@ -63,6 +76,7 @@ export async function GET() {
       missingRequiredEnv: missing,
       optionalEnvPresent: optionalPresent,
       configuredNames,
+      shape,
       database,
       hint: ok ? undefined : "See DOCS/deploy.md: add the variables in Vercel Project Settings and point DATABASE_URL at a migrated Postgres.",
     },
