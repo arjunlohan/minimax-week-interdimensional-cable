@@ -2,7 +2,7 @@ import { getWritable } from "workflow";
 import { start } from "workflow/api";
 
 import type { CaptionStepId } from "@/app/media/[slug]/localization/constants";
-import { translateCaptions } from "@mux/ai/workflows";
+import type { translateCaptions } from "@mux/ai/workflows";
 
 import { closeStream, sleepMs, writeToStream } from "./workflow-progress";
 
@@ -89,6 +89,10 @@ async function doTranslateCaptions(
 ): Promise<TranslateCaptionsResult> {
   "use step";
   await writeToStream(progress, { type: "current", step: "translate" });
+  // Loaded here rather than at the top of the module: @mux/ai validates the
+  // Mux credentials the moment it is imported and exits the process when they
+  // are absent, which would take the whole build down with it.
+  const { translateCaptions } = await import("@mux/ai/workflows");
   const run = await start(translateCaptions, [
     assetId,
     sourceLang,

@@ -4,7 +4,7 @@ import { start } from "workflow/api";
 import { env } from "@/app/lib/env";
 import { findAudioTrack, getAsset } from "@/app/lib/mux";
 import type { AudioStepId } from "@/app/media/[slug]/localization/constants";
-import { translateAudio } from "@mux/ai/workflows";
+import type { translateAudio } from "@mux/ai/workflows";
 
 import { closeStream, sleepMs, writeToStream } from "./workflow-progress";
 
@@ -152,6 +152,10 @@ async function doTranslateAudio(
 ): Promise<TranslateAudioResult> {
   "use step";
   await writeToStream(progress, { type: "current", step: "generate" });
+  // Loaded here rather than at the top of the module: @mux/ai validates the
+  // Mux credentials the moment it is imported and exits the process when they
+  // are absent, which would take the whole build down with it.
+  const { translateAudio } = await import("@mux/ai/workflows");
   const run = await start(translateAudio, [
     assetId,
     targetLang,
