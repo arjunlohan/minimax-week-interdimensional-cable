@@ -155,7 +155,7 @@ async function main(): Promise<void> {
       // drizzle wraps driver errors; the cause says whether it was a dropped
       // connection (retry once on a fresh one) or something that needs a look.
       const cause = err instanceof Error && err.cause instanceof Error ? err.cause.message : "";
-      if (/terminated|ECONNRESET|ETIMEDOUT/i.test(cause)) {
+      if (/terminated|disconnected|ECONNRESET|ECONNREFUSED|ETIMEDOUT|TLS/i.test(cause)) {
         try {
           await tick();
         } catch (again) {
