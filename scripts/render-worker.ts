@@ -44,10 +44,10 @@ if (/localhost|127\.0\.0\.1/.test(DATABASE_URL)) {
   console.warn("[worker] Polling a local database. The deployed site writes to the hosted one; set VERCEL_DATABASE_URL to serve it.");
 }
 
-// Hosted poolers drop idle connections; without a handler that ends the
-// process. Release idle clients early and log the rest, the next query
-// simply opens a fresh connection.
-const pool = new Pool({ connectionString: DATABASE_URL, max: 2, idleTimeoutMillis: 20_000, keepAlive: true });
+// Hosted poolers close connections that sit idle between polls, and the
+// driver only finds out on the next query. Release a client right after each
+// tick so every poll opens a fresh connection, and log anything else.
+const pool = new Pool({ connectionString: DATABASE_URL, max: 2, idleTimeoutMillis: 2_000 });
 pool.on("error", (err) => {
   console.warn("[worker] idle database connection dropped:", err.message);
 });
@@ -153,9 +153,17 @@ async function main(): Promise<void> {
       await tick();
     } catch (err) {
       // drizzle wraps driver errors; the cause says whether it was a dropped
-      // connection, a timeout or something that needs a look.
-      const cause = err instanceof Error && err.cause instanceof Error ? ` (${err.cause.message})` : "";
-      console.error("[worker] tick failed:", (err instanceof Error ? err.message : String(err)).slice(0, 120) + cause);
+      // connection (retry once on a fresh one) or something that needs a look.
+      const cause = err instanceof Error && err.cause instanceof Error ? err.cause.message : "";
+      if (/terminated|ECONNRESET|ETIMEDOUT/i.test(cause)) {
+        try {
+          await tick();
+        } catch (again) {
+          console.error("[worker] tick failed twice:", again instanceof Error ? again.message.slice(0, 120) : String(again));
+        }
+      } else {
+        console.error("[worker] tick failed:", (err instanceof Error ? err.message : String(err)).slice(0, 120) + (cause ? ` (${cause})` : ""));
+      }
     }
     await new Promise(resolve => setTimeout(resolve, POLL_MS));
   }
