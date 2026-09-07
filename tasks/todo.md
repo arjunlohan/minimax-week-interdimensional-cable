@@ -47,7 +47,7 @@ Brief: rebuild Interdimensional Cable on MiniMax models served through GMI Cloud
 - [ ] M3 dailies review of each clip (needs H3 clips)
 - [ ] FTS + M3 rerank for the memory tier
 - [ ] Voice-cloned announcer (needs a recording from the user)
-- [ ] Vercel deployment: hosted Neon database `interdimensional_cable` is migrated and carries the library; the site builds; `/api/health` shows the owner-entered variables (DATABASE_URL, MUX_TOKEN_ID, MUX_TOKEN_SECRET, GMI_CLOUD_APIKEY) saved blank and Sensitive, so they must be re-entered (DOCS/deploy.md, "Setting the values without seeing them"); create action now starts the workflow in-process
+- [x] Vercel deployment live at https://minimax-week-interdimensional-cable.vercel.app: hosted Neon database `interdimensional_cable` migrated and carrying the library; `/api/health` ok (the owner-entered variables had been saved blank and Sensitive; fixed through `npm run vercel:env-push`); `/create` lists the seven templates and `/media` the two audio episodes; the create action now starts the workflow in-process. BYOK stays off for the demo (spend guard caps MiniMax-H3 at $8)
 
 ## Deleted tests (with reasons)
 
