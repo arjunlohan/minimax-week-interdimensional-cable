@@ -11,6 +11,8 @@ import { WatchContent } from "./watch-content";
 
 export const dynamic = "force-dynamic";
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const pool = new Pool({ connectionString: env.DATABASE_URL });
 const db = drizzle(pool, { schema });
 
@@ -20,6 +22,11 @@ export default async function WatchPage({
   params: Promise<{ showId: string }>;
 }) {
   const { showId } = await params;
+
+  // Postgres rejects a malformed uuid with a 500; a bad link deserves a 404.
+  if (!UUID_PATTERN.test(showId)) {
+    notFound();
+  }
 
   const show = await db.query.generatedShows.findFirst({
     where: eq(schema.generatedShows.id, showId),

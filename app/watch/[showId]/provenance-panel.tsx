@@ -29,6 +29,20 @@ interface ProvenancePanelProps {
   hasTheme?: boolean;
   /** Music 3.0 was asked for a sung end-credits recap. */
   hasCredits?: boolean;
+  /**
+   * The engines recorded on the show row (`engineNotes.engines`). Episodes
+   * rendered before the MiniMax rebuild carry none, and the panel must not
+   * credit MiniMax for work another engine did.
+   */
+  engines?: EngineCredits | null;
+}
+
+export interface EngineCredits {
+  text?: string;
+  speech?: string;
+  video?: string;
+  music?: string;
+  platform?: string;
 }
 
 const MINIMAX_ICON = "/brand/minimax.svg";
@@ -61,8 +75,19 @@ export function ProvenancePanel({
   language,
   hasTheme = false,
   hasCredits = false,
+  engines = null,
 }: ProvenancePanelProps) {
   const brief = parseBrief(researchContext);
+  // No recorded engines means the episode predates the rebuild. Name that
+  // plainly rather than attributing it to the current models.
+  const legacy = !engines;
+  const platform = engines?.platform ?? "GMI Cloud";
+  const textEngine = legacy ? "Previous text engine" : (engines.text ?? "MiniMax-M3");
+  const speechEngine = legacy ? "Previous speech engine" : (engines.speech ?? "Speech 2.8 HD");
+  const videoEngine = legacy ? "Previous video engine" : (engines.video ?? "MiniMax-H3");
+  const musicEngine = legacy ? "Previous music engine" : (engines.music ?? "Music 3.0");
+  const icon = legacy ? undefined : MINIMAX_ICON;
+  const service = legacy ? "Pre-rebuild" : platform;
   const facts = brief?.groundedFacts ?? [];
   const sourced = facts.filter(f => f.sourceUrl).length;
   const queries = brief?.searchMetadata?.searchQueriesUsed ?? [];
@@ -75,41 +100,43 @@ export function ProvenancePanel({
   const rows: Row[] = [
     {
       stage: "Research",
-      engine: "MiniMax-M3",
-      icon: MINIMAX_ICON,
-      service: "GMI Cloud",
+      engine: textEngine,
+      icon,
+      service,
       detail: facts.length > 0 ?
         `${facts.length} grounded fact${facts.length === 1 ? "" : "s"}${sourced > 0 ? `, ${sourced} with a cited source` : ""}${queries.length > 0 ? ` from ${queries.length} research quer${queries.length === 1 ? "y" : "ies"}` : ""}` :
         "No stored research brief for this episode",
     },
     {
       stage: "Script",
-      engine: "MiniMax-M3",
-      icon: MINIMAX_ICON,
-      service: "GMI Cloud",
+      engine: textEngine,
+      icon,
+      service,
       detail: `${segmentCount} beat${segmentCount === 1 ? "" : "s"} across three passes: research, head writer, voice`,
     },
     isAudio ?
         {
           stage: "Voices",
-          engine: "Speech 2.8 HD",
-          icon: MINIMAX_ICON,
-          service: "GMI Cloud",
+          engine: speechEngine,
+          icon,
+          service,
           detail: `One request per line in each host's voice, ${durationSeconds}s, ${language.toUpperCase()}`,
         } :
         {
           stage: "Video",
-          engine: "MiniMax-H3",
-          icon: MINIMAX_ICON,
-          service: "GMI Cloud",
-          detail: `${segmentCount} clip${segmentCount === 1 ? "" : "s"} of 4 to 15 s, each voiced by Speech 2.8 HD, stitched with ffmpeg`,
+          engine: videoEngine,
+          icon,
+          service,
+          detail: legacy ?
+            `${segmentCount} clip${segmentCount === 1 ? "" : "s"} rendered before the MiniMax rebuild, stitched with ffmpeg` :
+            `${segmentCount} clip${segmentCount === 1 ? "" : "s"} of 4 to 15 s, each voiced by ${speechEngine}, stitched with ffmpeg`,
         },
     ...(scoreParts.length > 0 ?
         [{
           stage: "Score",
-          engine: "Music 3.0",
-          icon: MINIMAX_ICON,
-          service: "GMI Cloud",
+          engine: musicEngine,
+          icon,
+          service,
           detail: scoreParts.join(" and "),
         }] :
         []),

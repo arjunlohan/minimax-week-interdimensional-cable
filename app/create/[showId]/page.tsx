@@ -5,12 +5,20 @@ import { Header } from "@/app/components/header";
 import { getShowWithTemplateAction } from "./actions";
 import { GenerationProgress } from "./generation-progress";
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export default async function GenerationPage({
   params,
 }: {
   params: Promise<{ showId: string }>;
 }) {
   const { showId } = await params;
+
+  // Postgres rejects a malformed uuid with a 500; a bad link deserves a 404.
+  if (!UUID_PATTERN.test(showId)) {
+    notFound();
+  }
+
   const data = await getShowWithTemplateAction(showId);
 
   if (!data) {

@@ -1,6 +1,6 @@
 "use server";
 
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, lt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
@@ -25,11 +25,17 @@ const db = drizzle(pool, { schema });
 // Get Templates
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Templates ranked at or above this are legacy rows hidden from the picker. */
+const LEGACY_TEMPLATE_RANK = 100;
+
 export async function getTemplatesAction(): Promise<ShowTemplate[]> {
   try {
+    // Rows ranked 100 and above are legacy templates kept only so episodes made
+    // before the rebuild keep their format; they are not offered for new shows.
     const templates = await db
       .select()
       .from(schema.showTemplates)
+      .where(lt(schema.showTemplates.displayOrder, LEGACY_TEMPLATE_RANK))
       .orderBy(asc(schema.showTemplates.displayOrder), asc(schema.showTemplates.createdAt));
 
     return templates;

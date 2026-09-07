@@ -10,6 +10,7 @@ import type { GeneratedShow, ShowTemplate } from "@/db/schema";
 
 import { ChatPanel } from "./chat/chat-panel";
 import { ProvenancePanel } from "./provenance-panel";
+import type { EngineCredits } from "./provenance-panel";
 import { ShowTranscript } from "./show-transcript";
 import { DubbingPanel } from "./tts-panel";
 
@@ -164,6 +165,7 @@ export function WatchContent({ show, template }: WatchContentProps) {
             language={show.language ?? "en"}
             hasTheme={Boolean(show.themeLyrics)}
             hasCredits={Boolean(show.creditsLyrics)}
+            engines={(show.engineNotes as { engines?: EngineCredits } | null)?.engines ?? null}
           />
 
           {/* Show Details */}
