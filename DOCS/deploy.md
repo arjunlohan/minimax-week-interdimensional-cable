@@ -1,7 +1,5 @@
 # Deploying to Vercel
 
-The app deploys as a normal Next.js 16 project with the Workflow DevKit. The build itself needs no secrets, but two modules validate their configuration the moment they are imported (`@mux/ai`, used by the legacy caption and audio translation workflows, and `app/lib/env.ts` at runtime), so a deployment without the variables below fails at "Collecting page data" with `Invalid env: MUX_TOKEN_ID ... MUX_TOKEN_SECRET`.
-
 ## 1. Environment variables (Project Settings, Environment Variables, all environments)
 
 | Variable                                                                              | Value                                                                     | Why                                                                                                                              |
@@ -14,8 +12,6 @@ The app deploys as a normal Next.js 16 project with the Workflow DevKit. The bui
 | `NEXT_PUBLIC_BASE_URL`                                                                | the deployment URL                                                        | Workflow callbacks from the create action                                                                                        |
 | `H3_RESOLUTION`, `H3_AUDIO_STRATEGY`, `H3_MAX_REQUESTS_PER_RUN`, `H3_SESSION_CAP_USD` | optional                                                                  | Defaults: 768P, reference, 14, 8                                                                                                 |
 | `MUX_ASSET_LIMIT`                                                                     | optional                                                                  | Free plan is 10                                                                                                                  |
-
-`ELEVENLABS_API_KEY`, `S3_*` and `REMOTION_AWS_*` are only for the legacy translation and social-clip features and can stay unset.
 
 ## 2. Database
 

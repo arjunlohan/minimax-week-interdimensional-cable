@@ -70,7 +70,6 @@ If you find yourself writing a fallback that produces plausible content without 
 `@antfu/eslint-config` with the rules in `eslint.config.mjs`:
 
 - 2-space indent, semicolons always, double quotes, cuddled braces (`} else {`), operators at end of line.
-- Imports sorted by `perfectionist/sort-imports`: side-effect styles, built-ins, external, internal (`@mux/ai`), parent, sibling, index, then types. Blank lines between groups.
 - kebab-case file names (all-caps `.md` files excepted).
 - `console.log` warns. Prefix logs (`[gmi:speech]`, `[workflow:upload]`).
 - `node/no-process-env` is an error: read `env` from `app/lib/env.ts`.
@@ -106,7 +105,6 @@ KEY_ENCRYPTION_SECRET=     # openssl rand -base64 32
 # Optional
 NEXT_PUBLIC_BASE_URL=
 MUX_SIGNING_KEY=  MUX_PRIVATE_KEY=
-ELEVENLABS_API_KEY=  S3_ENDPOINT=  S3_REGION=  S3_BUCKET=  S3_ACCESS_KEY_ID=  S3_SECRET_ACCESS_KEY=   # legacy translation of imported talks
 REMOTION_AWS_ACCESS_KEY_ID=  REMOTION_AWS_SECRET_ACCESS_KEY=                                        # legacy social clips
 ```
 
@@ -179,7 +177,6 @@ Video: research, script, voices, generate-clips, music, stitch, upload. Audio: r
 /templates              # the show formats and their hosts
 /watch/[showId]         # player, synced transcript, in-character chat, tangents, memory card, provenance
 /media                  # library: generated shows and imported talks
-/media/[slug]           # imported talk: summary, translation, social clips (legacy @mux/ai layers)
 /search                 # full-text transcript search
 ```
 

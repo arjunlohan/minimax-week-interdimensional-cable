@@ -3,7 +3,6 @@
 import { motion } from "motion/react";
 
 import type { TranscriptCue, WorkflowStatus } from "../../types";
-import { Layer2Localization } from "../localization/ui";
 import { Layer3SocialClips } from "../social-clips/ui";
 import { Layer1SummaryAndTags } from "../summarize-and-tag/ui";
 
@@ -188,7 +187,6 @@ interface WorkflowsPanelProps {
   playbackPolicy: "public" | "signed";
   transcriptCues: TranscriptCue[];
   title: string;
-  hasElevenLabsKey: boolean;
   hasRemotionLambdaKeys: boolean;
 }
 
@@ -198,7 +196,6 @@ export function WorkflowsPanel({
   playbackPolicy,
   transcriptCues,
   title,
-  hasElevenLabsKey,
   hasRemotionLambdaKeys,
 }: WorkflowsPanelProps) {
   return (
@@ -219,20 +216,6 @@ export function WorkflowsPanel({
         </div>
         <div className="p-4">
           <Layer1SummaryAndTags assetId={assetId} />
-        </div>
-      </section>
-
-      {/* Layer 2: Localization */}
-      <section className="panel-section" aria-labelledby="localization-heading">
-        <div className="panel-section-header" style={{ fontFamily: "var(--font-space-mono)" }}>
-          <h3 id="localization-heading" className="flex items-center gap-2">
-            <span className="inline-block h-2.5 w-2.5 border border-border bg-[#1c65be]" />
-            LOCALIZATION
-            <span className="ml-auto text-[9px] text-foreground-muted">LVL 2</span>
-          </h3>
-        </div>
-        <div className="p-4">
-          <Layer2Localization assetId={assetId} hasElevenLabsKey={hasElevenLabsKey} />
         </div>
       </section>
 

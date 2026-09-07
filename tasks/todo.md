@@ -32,7 +32,7 @@ Brief: rebuild Interdimensional Cable on MiniMax models served through GMI Cloud
 - [x] End-to-end audio episode on the free models (show 4bfa4ea8, Joe Rogan Like, 60 s plan): ready on Mux as a 131.8 s asset (8 s theme + 108.8 s episode + 15 s sung credits), transcript offset by the theme, plays in the watch page and at https://player.mux.com/9n00bwSpEQVU003A3v02r8PLMi5oOAv4p01lQNtqWSH2VlU
 - [x] Live on that episode: in-character Q&A (M3, grounded in the brief, memory adapted) and a 35 s audio tangent (M3 script + Speech 2.8 HD) both worked from the watch page
 - [x] Fixes from that run: shorter search queries when the topic sentence finds no Hacker News hits; pass 3 tightens lines that would overrun their beat (M3 wrote about 2x the words); video lines voiced four at a time; 15 min speech-queue timeout with an on-disk line cache
-- [ ] Desk-format audio episode (show 7d1c0a2e, SNL Like, 60 s, the hero topic) to exercise the writers'-room desk path and the runtime fit before the hero; running
+- [x] Desk-format audio episode (show 7d1c0a2e, SNL Like, 60 s, the hero topic): 8 beats, 149 words, spoken 55.8 s (one line tightened by the runtime fit), ready on Mux as 78.8 s with theme and sung credits; https://player.mux.com/rxZl11nNnt5c01EcsSZFdq3n53n6BbJzBpXSWTziYTG8
 - [ ] 90 s video show through the real workflow (needs GMI credits); verify with ffprobe and the watch page (screenshot)
 - [ ] Spend recorded in DOCS/spend-ledger.md (currently $0.00)
 
@@ -65,6 +65,7 @@ Brief: rebuild Interdimensional Cable on MiniMax models served through GMI Cloud
 - The provenance panel reads `engineNotes.engines` and labels pre-rebuild episodes as made by the previous engine rather than crediting MiniMax.
 - The workflow file was split three ways (workflow, steps, shared) because the DevKit's workflow bundle traces every exported symbol.
 - The hero video episode is blocked on the GMI deposit (HTTP 402); the pipeline was validated end to end on the free models with audio episodes instead, and the video path is covered by tests.
+- The legacy caption and audio translation feature (`@mux/ai`, ElevenLabs, S3) was removed: the package exits the process at import when Mux credentials are absent and the DevKit inlines it into its step bundle, which broke every Vercel build without secrets. The imported talks, their player, summaries and social clips stay.
 
 ## Review
 

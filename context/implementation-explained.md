@@ -1,5 +1,7 @@
 # Implementation explained
 
+> Note (MiniMax Week rebuild): the caption and audio translation layer, its ElevenLabs and S3 configuration, and the `@mux/ai` package were removed. Passages below that describe them are historical.
+
 This document captures the Next.js implementation outline that supports the "Demuxed Library" demo described in `context/application-explained.md`.
 
 ---
@@ -139,9 +141,9 @@ Per the [Vercel Workflow docs](https://useworkflow.dev/docs/getting-started/next
 // workflows/create-clip.ts
 import { Buffer } from "node:buffer";
 
-import { renderClip, uploadToStorage } from "@/lib/remotion";
-
 import { translateAudio, translateCaptions } from "@mux/ai/workflows";
+
+import { renderClip, uploadToStorage } from "@/lib/remotion";
 
 // The main workflow function orchestrates the steps
 export async function createClipWorkflow(input: ClipInput) {

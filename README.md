@@ -115,7 +115,6 @@ Supporting infrastructure, deliberately not MiniMax and named as such: **Vercel 
 | `MUX_ASSET_LIMIT`                                | no                 | Stored-asset cap for your Mux plan. Default 10, the free-plan cap.                    |
 | `REQUIRE_USER_API_KEYS`, `KEY_ENCRYPTION_SECRET` | public deployments | Visitors supply their own GMI Cloud key, encrypted at rest for the life of their run. |
 | `NEXT_PUBLIC_BASE_URL`                           | no                 | Base URL for public endpoints and workflow callbacks.                                 |
-| `ELEVENLABS_API_KEY`, `S3_*`                     | no                 | Legacy caption and audio translation of imported talks. Not on the show path.         |
 | `REMOTION_AWS_*`                                 | no                 | Legacy social clips. Not on the show path.                                            |
 
 ### Commands
@@ -176,7 +175,6 @@ Stated up front rather than left to be discovered:
 - **MiniMax-H3 is paid and rate limited.** $0.13 per request, and GMI Cloud rate-limits H3 per hour; the client backs off on 429 and the spend guard refuses past the caps. A 90 second episode is roughly 8 to 12 requests. Clips render sequentially, so an episode takes minutes.
 - **Workflow run store.** Off Vercel, the Workflow DevKit persists runs to the local filesystem. Deploy to Vercel for a durable queue.
 - **Voice cloning is wired but off.** `cloneVoiceAndSpeak` exists; no show format uses it yet.
-- **The imported-talk features are legacy.** Caption translation, dubbing and social clips (`/media/[slug]`) need ElevenLabs, S3 and Remotion credentials and are not on the show path.
 
 ---
 

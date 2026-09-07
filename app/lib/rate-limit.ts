@@ -15,10 +15,8 @@ import { env } from "./env";
  */
 export const RATE_LIMITS = {
   // Render operations (high cost - ElevenLabs API)
-  "translate-audio": { maxRequests: 3, windowHours: 24 },
 
   // Translation captions and Rendering (moderate cost)
-  "translate-captions": { maxRequests: 10, windowHours: 24 },
   "render": { maxRequests: 6, windowHours: 24 },
 
   // AI summary generation (moderate cost)

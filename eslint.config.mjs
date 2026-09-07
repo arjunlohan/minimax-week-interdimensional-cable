@@ -52,7 +52,6 @@ export default antfu({
         "object",
         "unknown",
       ],
-      internalPattern: ["^@mux/ai.*"],
     }],
     "unicorn/filename-case": ["error", {
       case: "kebabCase",

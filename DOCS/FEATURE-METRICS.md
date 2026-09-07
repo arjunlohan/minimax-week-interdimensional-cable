@@ -19,8 +19,6 @@ Metric recording is automatically **bypassed in development** (`NODE_ENV=develop
 | `semantic-search-nav`        | Semantic search via the top navigation bar    | `/search` page                  |
 | `semantic-search-transcript` | Semantic search within the transcript panel   | Media detail page transcript    |
 | `summarize-and-tag`          | Clicks on "Summarize & Tag" button            | Media detail page               |
-| `translate-captions`         | Clicks on caption translation                 | Media detail localization panel |
-| `translate-audio`            | Clicks on audio translation (dubbing)         | Media detail localization panel |
 | `generate-preview`           | Clicks on "Generate Preview" for social clips | Media detail social clips panel |
 | `download-social-clip`       | Downloads of rendered social clip videos      | Media detail social clips panel |
 

@@ -17,7 +17,6 @@ interface MediaContentProps {
   muxAssetId: string;
   title: string;
   transcriptCues: TranscriptCue[];
-  hasElevenLabsKey: boolean;
   hasRemotionLambdaKeys: boolean;
 }
 
@@ -31,7 +30,6 @@ export function MediaContent({
   muxAssetId,
   title,
   transcriptCues,
-  hasElevenLabsKey,
   hasRemotionLambdaKeys,
 }: MediaContentProps) {
   return (
@@ -67,7 +65,6 @@ export function MediaContent({
             playbackPolicy={playbackPolicy}
             transcriptCues={transcriptCues}
             title={title}
-            hasElevenLabsKey={hasElevenLabsKey}
             hasRemotionLambdaKeys={hasRemotionLambdaKeys}
           />
         </div>

@@ -9,8 +9,6 @@ export type FeatureName =
   | "semantic-search-nav" |
   "semantic-search-transcript" |
   "summarize-and-tag" |
-  "translate-captions" |
-  "translate-audio" |
   "generate-preview" |
   "download-social-clip";
 

@@ -58,7 +58,6 @@ export default async function MediaDetailPage({ params }: MediaDetailPageProps) 
       parseVtt(video.transcriptVtt) :
       [];
 
-  const hasElevenLabsKey = Boolean(env.ELEVENLABS_API_KEY);
   const hasRemotionLambdaKeys = Boolean(
     env.REMOTION_AWS_ACCESS_KEY_ID && env.REMOTION_AWS_SECRET_ACCESS_KEY,
   );
@@ -76,7 +75,6 @@ export default async function MediaDetailPage({ params }: MediaDetailPageProps) 
             muxAssetId={video.muxAssetId}
             title={title}
             transcriptCues={transcriptCues}
-            hasElevenLabsKey={hasElevenLabsKey}
             hasRemotionLambdaKeys={hasRemotionLambdaKeys}
           />
         </div>

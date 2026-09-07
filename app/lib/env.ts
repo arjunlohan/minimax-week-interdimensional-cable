@@ -18,7 +18,7 @@ function requiredString(description: string, message?: string) {
 const EnvSchema = z.object({
   NODE_ENV: z.string().default("development").describe("Runtime environment."),
 
-  // Mux credentials (required for playback, uploads and the legacy @mux/ai primitives)
+  // Mux credentials (playback, direct uploads, the capacity preflight)
   MUX_TOKEN_ID: requiredString("Mux access token ID.", "Required to access Mux APIs"),
   MUX_TOKEN_SECRET: requiredString("Mux access token secret.", "Required to access Mux APIs"),
 
@@ -50,17 +50,6 @@ const EnvSchema = z.object({
   // owner's inference credits. Leave unset for local development.
   REQUIRE_USER_API_KEYS: optionalString("Set to \"true\" to require visitors to supply their own GMI Cloud API key before generating."),
   KEY_ENCRYPTION_SECRET: optionalString("Secret used to encrypt visitor API keys at rest. Required when REQUIRE_USER_API_KEYS is true. Generate with: openssl rand -base64 32"),
-
-  // ElevenLabs API key (optional; required only by the legacy translateAudio workflow)
-  ELEVENLABS_API_KEY: optionalString("ElevenLabs API key for the legacy translateAudio workflow."),
-
-  // S3-compatible storage. Optional: only the legacy @mux/ai translation
-  // primitives read these, and those also need ELEVENLABS_API_KEY.
-  S3_ENDPOINT: optionalString("S3-compatible endpoint for the legacy translation workflows."),
-  S3_REGION: optionalString("S3 region for the legacy translation workflows."),
-  S3_BUCKET: optionalString("S3 bucket for the legacy translation workflows."),
-  S3_ACCESS_KEY_ID: optionalString("S3 access key ID for the legacy translation workflows."),
-  S3_SECRET_ACCESS_KEY: optionalString("S3 secret access key for the legacy translation workflows."),
 
   // Database (PostgreSQL)
   DATABASE_URL: requiredString("PostgreSQL connection string. Required to store shows, transcripts, memory and the spend ledger.", "Required to connect to the database."),

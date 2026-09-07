@@ -108,7 +108,6 @@ app/lib/tts.ts              # per-line speech on Speech 2.8 HD
 app/lib/media.ts, stitch.ts # ffmpeg helpers
 app/create/                 # create flow and live progress with engine chips
 app/watch/[showId]/         # player, synced transcript, chat, tangents, memory, provenance
-app/media/                  # library of shows and imported talks (legacy @mux/ai features)
 workflows/generate-show.ts  # the durable pipeline
 db/                         # Drizzle schema + migrations (0009 is the MiniMax Week schema)
 scripts/                    # gmi-smoke, autonomous-trend-agent, seed-templates, import-mux-assets

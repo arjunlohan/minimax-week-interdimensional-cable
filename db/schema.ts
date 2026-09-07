@@ -59,7 +59,7 @@ export const videoChunks = pgTable("video_chunks", {
 export const rateLimits = pgTable("rate_limits", {
   id: uuid("id").primaryKey().defaultRandom(),
   identifier: text("identifier").notNull(), // IP address or fingerprint
-  endpoint: text("endpoint").notNull(), // e.g., "translate-audio", "render"
+  endpoint: text("endpoint").notNull(), // e.g., "generate-show", "render"
   windowStart: timestamp("window_start").notNull(), // Start of rate limit window
   requestCount: integer("request_count").notNull().default(1),
 }, table => [

@@ -1,5 +1,7 @@
 # @mux/ai + Vercel Workflows: Video AI infrastructure that scales
 
+> Note (MiniMax Week rebuild): the caption and audio translation layer, its ElevenLabs and S3 configuration, and the `@mux/ai` package were removed. Passages below that describe them are historical.
+
 ## Goal
 
 This app demonstrates how to combine **`@mux/ai`** with **Vercel Workflows** to ship video intelligence that holds up at scale.

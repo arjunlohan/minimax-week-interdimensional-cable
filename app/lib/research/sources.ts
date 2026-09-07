@@ -263,7 +263,7 @@ const SHORT_KEEP = new Set(["ai", "ml", "vr", "ar", "3d", "5g", "gpu", "llm", "a
  */
 export function searchQueryCandidates(topic: string): string[] {
   const full = toSearchQuery(topic);
-  const firstClause = full.split(/[,:;?!]| \band\b | \bbecause\b /)[0]?.trim() ?? "";
+  const firstClause = full.split(/[,:;?!]| and | because /)[0]?.trim() ?? "";
   const words = full
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, " ")

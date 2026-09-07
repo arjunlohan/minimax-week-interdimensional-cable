@@ -14,14 +14,12 @@ Rate limiting is automatically **bypassed in development** (`NODE_ENV=developmen
 
 ## Rate Limits
 
-| Endpoint             | Limit | Window | Cost Level |
-| -------------------- | ----- | ------ | ---------- |
-| `translate-audio`    | 3     | 24h    | High       |
-| `translate-captions` | 10    | 24h    | Moderate   |
-| `render`             | 6     | 24h    | Moderate   |
-| `summary`            | 10    | 24h    | Moderate   |
-| `generate-show`      | 5     | 24h    | High       |
-| `search`             | 50    | 1h     | Low        |
+| Endpoint        | Limit | Window | Cost Level |
+| --------------- | ----- | ------ | ---------- |
+| `render`        | 6     | 24h    | Moderate   |
+| `summary`       | 10    | 24h    | Moderate   |
+| `generate-show` | 5     | 24h    | High       |
+| `search`        | 50    | 1h     | Low        |
 
 `generate-show` is the expensive one: MiniMax-H3 is paid per request (the spend guard in `app/lib/gmi/spend.ts` caps it separately), and each finished show takes a Mux asset slot.
 
@@ -29,8 +27,6 @@ Limits are configured in `app/lib/rate-limit.ts`:
 
 ```typescript
 export const RATE_LIMITS = {
-  "translate-audio": { maxRequests: 3, windowHours: 24 },
-  "translate-captions": { maxRequests: 10, windowHours: 24 },
   "render": { maxRequests: 6, windowHours: 24 },
   "summary": { maxRequests: 10, windowHours: 24 },
   "generate-show": { maxRequests: 5, windowHours: 24 },

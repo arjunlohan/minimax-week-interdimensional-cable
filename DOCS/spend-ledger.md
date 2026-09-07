@@ -17,9 +17,10 @@ WHERE model = 'MiniMax-H3';
 
 ## Runs
 
-| When (PDT) | Show | Format | H3 requests | H3 spend | Notes |
-| --- | --- | --- | --- | --- | --- |
-| 2026-09-06 20:40 | 4bfa4ea8 (Joe Rogan Like, smart-fridge botnet) | audio, 60 s plan | 0 | $0.00 | Free models only: M3, Speech 2.8 HD, Music 3.0. Ready on Mux, 131.8 s. |
-| 2026-09-06 20:19 | smoke (`gmi:smoke --only=video`) | n/a | 0 | $0.00 | MiniMax-H3 returned HTTP 402 Insufficient credits; nothing charged. |
+| When (PDT)       | Show                                                 | Format           | H3 requests | H3 spend | Notes                                                                  |
+| ---------------- | ---------------------------------------------------- | ---------------- | ----------- | -------- | ---------------------------------------------------------------------- |
+| 2026-09-06 20:40 | 4bfa4ea8 (Joe Rogan Like, smart-fridge botnet)       | audio, 60 s plan | 0           | $0.00    | Free models only: M3, Speech 2.8 HD, Music 3.0. Ready on Mux, 131.8 s. |
+| 2026-09-06 21:12 | 7d1c0a2e (SNL Like, how AI video models are trained) | audio, 60 s plan | 0           | $0.00    | Free models only. Ready on Mux, 78.8 s.                                |
+| 2026-09-06 20:19 | smoke (`gmi:smoke --only=video`)                     | n/a              | 0           | $0.00    | MiniMax-H3 returned HTTP 402 Insufficient credits; nothing charged.    |
 
 Ledger total from `gmi_spend`: 0 requests, $0.00.

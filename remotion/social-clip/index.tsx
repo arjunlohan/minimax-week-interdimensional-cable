@@ -398,7 +398,7 @@ export function SocialClipComposition({
             letterSpacing: "0.25em",
           }}
         >
-          @mux/ai workflows demo
+          Interdimensional Cable on MiniMax
         </span>
       </div>
     </div>

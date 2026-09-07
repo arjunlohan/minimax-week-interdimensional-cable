@@ -1,5 +1,7 @@
 # Design explained
 
+> Note (MiniMax Week rebuild): the caption and audio translation layer, its ElevenLabs and S3 configuration, and the `@mux/ai` package were removed. Passages below that describe them are historical.
+
 This document describes the intended look-and-feel of the "Demuxed Library" app.
 
 The visual reference is a **minimal, high-contrast, slightly brutalist** UI: lots of whitespace, thick black rules, sharp corners, and simple blocks that feel fast and honest.
