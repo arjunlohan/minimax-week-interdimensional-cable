@@ -44,7 +44,13 @@ if (/localhost|127\.0\.0\.1/.test(DATABASE_URL)) {
   console.warn("[worker] Polling a local database. The deployed site writes to the hosted one; set VERCEL_DATABASE_URL to serve it.");
 }
 
-const pool = new Pool({ connectionString: DATABASE_URL, max: 2 });
+// Hosted poolers drop idle connections; without a handler that ends the
+// process. Release idle clients early and log the rest, the next query
+// simply opens a fresh connection.
+const pool = new Pool({ connectionString: DATABASE_URL, max: 2, idleTimeoutMillis: 20_000, keepAlive: true });
+pool.on("error", (err) => {
+  console.warn("[worker] idle database connection dropped:", err.message);
+});
 const db = drizzle(pool, { schema });
 let lastHeartbeat = 0;
 
