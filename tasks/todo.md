@@ -11,8 +11,9 @@ Brief: rebuild Interdimensional Cable on MiniMax models served through GMI Cloud
 - [x] `scripts/gmi-smoke.ts` written (`npm run gmi:smoke`, `--video`, `--voices`)
 - [x] GMI_CLOUD_APIKEY in .env.local
 - [x] Smoke: M3 text + JSON ok (5 s), Speech 2.8 HD ok (22 to 144 s queue), Music 3.0 ok after RPM resubmit (50 s song)
-- [ ] `--video` smoke ($0.26): upload signature fixed (image/jpg); H3 comparison running
-- [ ] Record observations in DOCS/gmi-contracts.md and the audio strategy decision
+- [x] Upload API verified live (signed content types per file type; portraits and mp3 lines accepted)
+- [ ] `--video` smoke ($0.26): BLOCKED, MiniMax-H3 returns HTTP 402 "Insufficient credits" until the GMI account is topped up; the audio-strategy comparison waits on it
+- [x] Observations recorded in DOCS/gmi-contracts.md (M3 timings, speech queue 20 s to 5+ min, music RPM limit as a failed record, upload signatures, the 402)
 
 ## Phase 1: swap the model layer
 
