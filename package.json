@@ -21,7 +21,8 @@
     "visualize:workflows": "npx workflow web",
     "test": "vitest run",
     "test:watch": "vitest",
-    "gmi:smoke": "tsx scripts/gmi-smoke.ts"
+    "gmi:smoke": "tsx scripts/gmi-smoke.ts",
+    "db:prepare-hosted": "bash scripts/prepare-hosted-db.sh"
   },
   "dependencies": {
     "@ai-sdk/gmicloud": "^3.0.15",

@@ -15,18 +15,19 @@
 
 ## 2. Database
 
-Add Postgres from the Vercel Marketplace (Neon or Supabase both work; no extensions are needed since search is Postgres full-text). The integration injects `DATABASE_URL`. Then, from your machine, point at it and prepare it:
+Add Postgres from the Vercel Marketplace (Neon is the quickest; Supabase also works; no extensions are needed since search is Postgres full-text). The integration injects `DATABASE_URL`. Copy that value (Project Settings, Environment Variables, reveal) and prepare the database from your machine with the real URL, not a placeholder:
 
 ```bash
-DATABASE_URL="<hosted url>" npm run db:migrate
-DATABASE_URL="<hosted url>" npm run seed-templates
+npm run db:prepare-hosted -- "postgresql://user:password@host/db?sslmode=require"
 ```
 
-To carry the local library (episodes, transcripts, memory) across, dump and restore instead of re-seeding:
+To carry the local library (episodes, transcripts, memory) across instead of starting empty, the target must be a brand-new empty database:
 
 ```bash
-pg_dump --no-owner --no-acl -h 127.0.0.1 -p 5432 interdimensional_cable_minimax | psql "<hosted url>"
+npm run db:prepare-hosted -- "postgresql://user:password@host/db?sslmode=require" --copy-local
 ```
+
+The script checks the connection first, applies the migrations and seeds the templates (or copies the local database), then lists the tables. If you use the Vercel CLI, `vercel link` followed by `vercel env pull .env.vercel.local` writes the injected `DATABASE_URL` to a local file you can copy from.
 
 ## 3. Function duration
 
