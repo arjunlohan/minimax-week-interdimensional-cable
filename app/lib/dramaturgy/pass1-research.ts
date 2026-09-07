@@ -1,6 +1,6 @@
 import { MissingApiKeyError, resolveGmiKey } from "@/app/lib/api-keys";
 import { generateJson } from "@/app/lib/gmi/text";
-import { extractTopicUrl, gatherSources, toSearchQuery } from "@/app/lib/research/sources";
+import { gatherSourcesDetailed } from "@/app/lib/research/sources";
 import type { ResearchSource } from "@/app/lib/research/sources";
 import { getDefaultShowSkill } from "@/app/lib/skills/registry";
 
@@ -401,8 +401,8 @@ export async function runPass1Research(
   }
 
   const enableSearch = input.options?.enableSearch !== false;
-  const sources = enableSearch ? await gatherSources(input.topic) : [];
-  const searchQuery = extractTopicUrl(input.topic) ?? toSearchQuery(input.topic);
+  const gathered = enableSearch ? await gatherSourcesDetailed(input.topic) : { sources: [], queriesTried: [] };
+  const sources = gathered.sources;
 
   const userPrompt = `TOPIC TO INVESTIGATE: "${input.topic}"
 TOPIC TYPE: ${input.topicType ?? "custom"}
@@ -436,7 +436,7 @@ Generate a comprehensive ResearchBrief JSON with grounded facts, bizarre stats, 
     // "enabled" reports what actually grounded the brief, not what was asked
     // for: with nothing fetched the model wrote from its own knowledge.
     enabled: sources.length > 0,
-    searchQueriesUsed: enableSearch ? [searchQuery] : [],
+    searchQueriesUsed: enableSearch ? gathered.queriesTried : [],
     groundingSources: sources.map(source => ({ title: source.title, url: source.url })),
     groundingChunkCount: sources.length,
   };

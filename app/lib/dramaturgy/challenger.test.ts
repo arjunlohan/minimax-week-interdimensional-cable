@@ -52,7 +52,11 @@ vi.mock("@/app/lib/gmi/text", () => ({
 // The fetch boundary for research grounding.
 vi.mock("@/app/lib/research/sources", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/app/lib/research/sources")>();
-  return { ...actual, gatherSources: vi.fn().mockResolvedValue([]) };
+  return {
+    ...actual,
+    gatherSources: vi.fn().mockResolvedValue([]),
+    gatherSourcesDetailed: vi.fn().mockResolvedValue({ sources: [], queriesTried: ["mocked topic"] }),
+  };
 });
 
 // Mock memory bank

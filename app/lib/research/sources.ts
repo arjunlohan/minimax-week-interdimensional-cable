@@ -117,6 +117,133 @@ export function toSearchQuery(topic: string): string {
   return topic.replace(/\s+/g, " ").trim().slice(0, MAX_QUERY_CHARS);
 }
 
+const STOPWORDS = new Set([
+  "a",
+  "an",
+  "the",
+  "and",
+  "or",
+  "but",
+  "of",
+  "in",
+  "on",
+  "at",
+  "to",
+  "for",
+  "from",
+  "by",
+  "with",
+  "about",
+  "into",
+  "over",
+  "why",
+  "how",
+  "what",
+  "when",
+  "where",
+  "who",
+  "which",
+  "that",
+  "this",
+  "these",
+  "those",
+  "is",
+  "are",
+  "was",
+  "were",
+  "be",
+  "been",
+  "being",
+  "it",
+  "its",
+  "it's",
+  "your",
+  "you",
+  "yours",
+  "our",
+  "their",
+  "they",
+  "them",
+  "we",
+  "us",
+  "i",
+  "me",
+  "my",
+  "every",
+  "eventually",
+  "always",
+  "never",
+  "just",
+  "really",
+  "very",
+  "also",
+  "than",
+  "then",
+  "so",
+  "as",
+  "if",
+  "not",
+  "no",
+  "do",
+  "does",
+  "did",
+  "doing",
+  "can",
+  "could",
+  "will",
+  "would",
+  "should",
+  "may",
+  "might",
+  "up",
+  "down",
+  "out",
+  "all",
+  "any",
+  "some",
+  "more",
+  "most",
+  "much",
+  "many",
+  "one",
+  "two",
+  "new",
+  "old",
+  "big",
+  "little",
+  "plotting",
+  "kitchen",
+]);
+
+/**
+ * Search queries to try, most specific first. A full sentence rarely matches a
+ * Hacker News title, so the fallbacks shorten it: the first clause, then the
+ * content words, then the first three of those.
+ */
+export function searchQueryCandidates(topic: string): string[] {
+  const full = toSearchQuery(topic);
+  const firstClause = full.split(/[,:;?!]| \band\b | \bbecause\b /)[0]?.trim() ?? "";
+  const words = full
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .split(/\s+/)
+    .filter(w => w.length > 2 && !STOPWORDS.has(w));
+  const compact = words.slice(0, 5).join(" ");
+  const shortest = words.slice(0, 3).join(" ");
+  const seen = new Set<string>();
+  return [full, firstClause, compact, shortest]
+    .map(q => q.trim())
+    .filter(q => q.length > 0 && !seen.has(q.toLowerCase()) && seen.add(q.toLowerCase()));
+}
+
+export interface GatherSourcesResult {
+  sources: ResearchSource[];
+  /** Every query actually sent to Hacker News, in order. */
+  queriesTried: string[];
+  /** The query that produced the sources, when one did. */
+  queryUsed?: string;
+}
+
 function looksTextual(contentType: string | null): boolean {
   if (!contentType) {
     return true;
@@ -188,6 +315,10 @@ async function searchHackerNews(query: string, timeoutMs: number): Promise<HnHit
  * research pass has to run on the model's own knowledge and say so.
  */
 export async function gatherSources(topic: string, options: GatherSourcesOptions = {}): Promise<ResearchSource[]> {
+  return (await gatherSourcesDetailed(topic, options)).sources;
+}
+
+export async function gatherSourcesDetailed(topic: string, options: GatherSourcesOptions = {}): Promise<GatherSourcesResult> {
   const maxSources = Math.max(1, Math.floor(options.maxSources ?? DEFAULT_MAX_SOURCES));
   const maxChars = Math.max(1, Math.floor(options.maxCharsPerSource ?? DEFAULT_MAX_CHARS));
   const timeoutMs = Math.max(1, Math.floor(options.signalTimeoutMs ?? DEFAULT_TIMEOUT_MS));
@@ -196,29 +327,41 @@ export async function gatherSources(topic: string, options: GatherSourcesOptions
   if (directUrl) {
     const page = await fetchReadablePage(directUrl, timeoutMs, maxChars);
     if (!page) {
-      return [];
+      return { sources: [], queriesTried: [directUrl] };
     }
-    return [{ title: page.title ?? new URL(directUrl).hostname, url: directUrl, excerpt: page.text, via: "direct" }];
+    return {
+      sources: [{ title: page.title ?? new URL(directUrl).hostname, url: directUrl, excerpt: page.text, via: "direct" }],
+      queriesTried: [directUrl],
+      queryUsed: directUrl,
+    };
   }
 
-  const query = toSearchQuery(topic);
-  if (!query) {
-    return [];
-  }
-
+  const queriesTried: string[] = [];
   const seen = new Set<string>();
   const candidates: Array<{ title: string; url: string; points?: number }> = [];
-  for (const hit of await searchHackerNews(query, timeoutMs)) {
-    const url = typeof hit.url === "string" ? hit.url.trim() : "";
-    if (!isHttpUrl(url) || seen.has(url)) {
-      continue;
+  let query = "";
+  for (const candidateQuery of searchQueryCandidates(topic)) {
+    queriesTried.push(candidateQuery);
+    for (const hit of await searchHackerNews(candidateQuery, timeoutMs)) {
+      const url = typeof hit.url === "string" ? hit.url.trim() : "";
+      if (!isHttpUrl(url) || seen.has(url)) {
+        continue;
+      }
+      seen.add(url);
+      candidates.push({
+        title: typeof hit.title === "string" && hit.title.trim() ? hit.title.trim() : new URL(url).hostname,
+        url,
+        points: typeof hit.points === "number" ? hit.points : undefined,
+      });
     }
-    seen.add(url);
-    candidates.push({
-      title: typeof hit.title === "string" && hit.title.trim() ? hit.title.trim() : new URL(url).hostname,
-      url,
-      points: typeof hit.points === "number" ? hit.points : undefined,
-    });
+    if (candidates.length > 0) {
+      query = candidateQuery;
+      break;
+    }
+  }
+  if (candidates.length === 0) {
+    console.log(`[research:sources] no linked Hacker News stories for ${queriesTried.map(q => `"${q.slice(0, 60)}"`).join(", ")}`);
+    return { sources: [], queriesTried };
   }
 
   // A couple of spares cover the paywalled or script-only pages that get
@@ -242,5 +385,5 @@ export async function gatherSources(topic: string, options: GatherSourcesOptions
   }
 
   console.log(`[research:sources] "${query.slice(0, 80)}": ${candidates.length} stories with links, ${attempted.length} read, ${sources.length} usable`);
-  return sources;
+  return { sources, queriesTried, queryUsed: sources.length > 0 ? query : undefined };
 }

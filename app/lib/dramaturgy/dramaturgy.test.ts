@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { generateJson, generateText } from "@/app/lib/gmi/text";
-import { gatherSources } from "@/app/lib/research/sources";
+import { gatherSources, gatherSourcesDetailed } from "@/app/lib/research/sources";
 import type { ResearchSource } from "@/app/lib/research/sources";
 import { calculateClipWordBudgets } from "@/app/lib/skills/archetype-a";
 import { getDefaultShowSkill, getShowSkill } from "@/app/lib/skills/registry";
@@ -50,7 +50,7 @@ vi.mock("@/app/lib/gmi/text", () => ({
 // The fetch boundary. The pure helpers stay real; only page reading is faked.
 vi.mock("@/app/lib/research/sources", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/app/lib/research/sources")>();
-  return { ...actual, gatherSources: vi.fn() };
+  return { ...actual, gatherSources: vi.fn(), gatherSourcesDetailed: vi.fn() };
 });
 
 // Mock memory-bank
@@ -70,6 +70,7 @@ vi.mock("@/app/lib/memory-bank", () => ({
 const generateJsonMock = vi.mocked(generateJson);
 const generateTextMock = vi.mocked(generateText);
 const gatherSourcesMock = vi.mocked(gatherSources);
+const gatherSourcesDetailedMock = vi.mocked(gatherSourcesDetailed);
 
 const FETCHED_SOURCES: ResearchSource[] = [
   {
@@ -106,6 +107,13 @@ describe("milestone 2: Multi-Pass Dramaturgy & Scripting Engine", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     gatherSourcesMock.mockResolvedValue([]);
+    // Pass 1 calls the detailed gatherer; the tests script the plain one, so
+    // the detailed mock derives its answer from it and reports the topic as
+    // the query. Re-armed here because resetAllMocks drops implementations.
+    gatherSourcesDetailedMock.mockImplementation(async (topic: string) => {
+      const sources = await gatherSourcesMock(topic);
+      return { sources, queriesTried: [topic], queryUsed: sources.length > 0 ? topic : undefined };
+    });
   });
 
   // ───────────────────────────────────────────────────────────────────────────
