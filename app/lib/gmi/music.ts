@@ -56,7 +56,10 @@ export function buildMusicPayload(request: MusicRequest): Record<string, unknown
 export async function generateMusic(request: MusicRequest): Promise<MusicResult> {
   const payload = buildMusicPayload(request);
   const format = request.format ?? "mp3";
-  const record = await runQueued(MUSIC_MODEL_ID, payload, { pollMs: 5_000, timeoutMs: 10 * 60_000 });
+  // Music 3.0 enforces a low requests-per-minute limit and reports it as a
+  // failed record; the theme and the credits of one episode already collide
+  // with it, so allow several resubmissions (20 s to 60 s apart).
+  const record = await runQueued(MUSIC_MODEL_ID, payload, { pollMs: 5_000, timeoutMs: 10 * 60_000, rateLimitRetries: 8 });
   const remoteUrl = firstMediaUrl(record, "audio");
   const audio = await downloadToBuffer(remoteUrl);
   const localPath = tmpPath("music", format);
