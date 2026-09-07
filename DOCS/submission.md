@@ -1,54 +1,59 @@
 # Submission: MiniMax Week × GMI Cloud
 
-Campaign window: Aug 24 to Sep 6, 2026. Rules recap: core generation on MiniMax models served through GMI Cloud (supporting infrastructure from anywhere); a public repo; a demo video of at most 3 minutes; the description form; a post on X tagging @gmi_cloud and MiniMax.
+Campaign window: Aug 24 to Sep 6, 2026. Rules recap: core generation on MiniMax models served through GMI Cloud (supporting infrastructure from anywhere); a public repo; a demo video of at most 3 minutes; the description form; a post on X tagging MiniMax and GMI Cloud.
 
-## Suggested title
+## Form fields
 
-**Interdimensional Cable: an AI showrunner that writes, performs, films and scores a late-night episode from any topic**
+**Project name:** Interdimensional Cable
 
-Short form, if the field is small: **Interdimensional Cable, the autonomous AI showrunner**
+**Track:** Synthesis. The track's own phrase is "agents that direct": MiniMax-M3 directs the whole production (research, script, casting, per-line acting direction, lyrics) and Speech 2.8 HD and Music 3.0 execute it. The alternative would be Multimodality (sound as one produced output, a show that scores itself); Synthesis matches the product's identity and the site's own badge.
 
-## Track
+**MiniMax models used:** M3, Speech 2.8, Music 3.0. (Not H3: the video path is implemented but no submitted episode used it. Not M2.7.)
 
-**Synthesis.** Reasoning that drives video: MiniMax-M3 plans every beat, casts every voice and writes every lyric, and the video, speech and music models execute its direction. An agent that directs.
+**Team:** Solo.
 
-## Project description (for the form, about 150 words)
+**Public repository:** https://github.com/arjunlohan/minimax-week-interdimensional-cable
 
-Interdimensional Cable turns any topic into a late-night comedy episode with no human in the loop. Pick a format (investigative desk, dual-anchor news, venture panel, podcast), paste a link or a sentence, and a durable workflow does the rest. MiniMax-M3 reads the real sources, runs a three-pass writers' room and plans 8 to 12 second beats with acting directions. Speech 2.8 HD performs every line in a fixed voice per host with the emotion the script asks for. MiniMax-H3 renders each clip in reference-to-video mode, anchored to the host's portrait and to that line's audio, so the host looks the same and performs the exact words across clips. M3 then writes a theme hook and an end-credits song that sings the episode's three best jokes, and Music 3.0 records both. FFmpeg assembles, Mux streams. A spend guard refuses rather than degrades. Afterwards the host answers questions in character, remembers the listener, and a coordinator can pick tomorrow's episode from Hacker News. All four models are served through GMI Cloud.
+**Live site:** https://minimax-week-interdimensional-cable.vercel.app
 
-## Links
+**Demo video:** at most 3:00 (the form's hard limit); host it on X or YouTube and paste the link.
 
-- Repo: https://github.com/arjunlohan/minimax-week-interdimensional-cable
-- Hero episode: {{HERO_WATCH_URL}}
-- Audio episode (free models, 2:12): https://player.mux.com/9n00bwSpEQVU003A3v02r8PLMi5oOAv4p01lQNtqWSH2VlU
-- Demo video: {{DEMO_VIDEO_URL}}
+**Full description:**
 
-## X post drafts
+Interdimensional Cable turns any topic into a late-night talk show episode with no human in the loop. Pick a format (a four-host venture panel, a two-host podcast, a desk show), type a topic or paste a link, choose audio, a length from one to five minutes, and how much you already know. About twenty minutes later there is a finished episode on a public page: a theme song, hosts arguing in their own voices, and end credits that sing the episode's best jokes back to you. Then you can ask a host anything, in character, and it answers, out loud if you want.
 
-Each is under 280 characters with the URL counted at X's fixed 23 characters. The drafts sit in code blocks so the handles copy out unescaped. Verify the MiniMax handle before posting: `@MiniMax__AI` is used below and should be checked against MiniMax's current X account.
+Three MiniMax models do the work, all served through GMI Cloud on one key.
 
-**Draft 1, the launch**
+MiniMax-M3 is the showrunner. It researches the topic from fetched sources, runs a three-pass writers' room (research brief, head writer, then a voice pass that tightens every line to the seconds it actually has), writes the acting direction and emotion tag for each line, writes the theme lyrics and the credits song, answers listener questions in character grounded in the same research, and keeps a memory bank so the next episode adapts to the listener. Long-context inputs, JSON output validated against schemas with one repair round.
+
+Speech 2.8 HD performs every line, one request per line, in a fixed voice per host with the emotion the script asks for, thirty to sixty lines an episode. The transcript is re-timed from the measured audio so it follows playback exactly.
+
+Music 3.0 records the theme hook and the sung end-credits recap for every episode, from lyrics M3 wrote for that episode.
+
+Everything runs as a durable Vercel workflow: research, script, voices, score, assembly with ffmpeg, publish to Mux. Each step is checkpointed and named on screen while it runs. Because one voice line can wait minutes in the model queue, the deployed site queues shows for a small render worker instead of pretending a 300-second function can finish them, and the progress page says so honestly.
+
+What is original: the show scores itself and sings its own credits; the hosts remember you; and every episode ships with a receipt panel that says which model did what.
+
+Try it: https://minimax-week-interdimensional-cable.vercel.app (Browse plays finished episodes; Create renders when the worker is online). Example episodes: a four-minute All In Like show about Steve Jobs' investment in Pixar, created on the live site, https://minimax-week-interdimensional-cable.vercel.app/watch/2752c892-9b8d-418c-9e29-207d8a11106c; and a five-minute one on the same topic, https://minimax-week-interdimensional-cable.vercel.app/watch/d25aeb36-6722-4b09-ac24-1ba743836ff5. Code: https://github.com/arjunlohan/minimax-week-interdimensional-cable.
+
+MiniMax-H3 support (reference-to-video anchored to the host portrait and to each line's audio, with a spend guard) is implemented but not used in the submitted episodes. This is a rebuild, during the campaign window, of an earlier project of mine; the previous engines were replaced by MiniMax models, and the README's provenance section says what was kept.
+
+## X post
+
+Under 280 characters with the URL counted at 23. MiniMax's account shows as both @MiniMax_AI and @MiniMax__AI in search results; open the profile and use the one that posted most recently before sending.
 
 ```text
-Interdimensional Cable, rebuilt for MiniMax Week: any topic in, a late-night episode out. MiniMax-M3 writes, Speech 2.8 HD performs, MiniMax-H3 films the host, Music 3.0 sings the credits, all served through @gmi_cloud. Models by @MiniMax__AI. {{HERO_WATCH_URL}}
+I built a late-night show that writes, voices, scores and sings itself. Type a topic, get an episode. MiniMax-M3, Speech 2.8 HD and Music 3.0 on one @gmi_cloud key, made for MiniMax Week with @MiniMax_AI. Try it: https://minimax-week-interdimensional-cable.vercel.app
 ```
 
-**Draft 2, the technical hook**
-
 ```text
-Every MiniMax-H3 clip carries the host's portrait as a reference image and that line's Speech 2.8 audio as reference audio: same face, same voice, exact words, clip after clip. Four @MiniMax__AI models, one durable pipeline, on @gmi_cloud. https://github.com/arjunlohan/minimax-week-interdimensional-cable
-```
-
-**Draft 3, the originality hook**
-
-```text
-The show scores itself. MiniMax-M3 writes a theme hook in the host's voice and an end-credits song that sings the episode's three best jokes, and Music 3.0 records both, per episode. Built for MiniMax Week on @gmi_cloud with @MiniMax__AI models. {{HERO_WATCH_URL}}
+Four AI hosts just argued about Steve Jobs buying Pixar for four minutes. Nobody wrote it, voiced it or scored it. MiniMax-M3, Speech 2.8 HD and Music 3.0 on @gmi_cloud, built for MiniMax Week with @MiniMax_AI. Open source: https://github.com/arjunlohan/minimax-week-interdimensional-cable
 ```
 
 ## Checklist
 
-- [ ] Repo public, README placeholders (`{{HERO_WATCH_URL}}`, `{{HERO_SPEND}}`) filled in
-- [ ] Demo video at most 3:00, following the shot list in `README.md`
-- [ ] `DOCS/spend-ledger.md` matches `gmi_spend`
+- [x] Repo public, README placeholders filled
+- [ ] Demo video at most 3:00, uploaded, link in the form
+- [x] `DOCS/spend-ledger.md` matches `gmi_spend` ($0.00)
 - [ ] Description form submitted with the text above
-- [ ] X post published, tagging @gmi_cloud and the verified MiniMax handle
+- [ ] X post published, tagging @gmi_cloud and MiniMax

@@ -10,9 +10,9 @@ Pick a late-night format, give it a topic or a link, and a durable workflow rese
 
 ## What you will see in 60 seconds
 
-**Hero episode:** {{HERO_WATCH_URL}}
+**Hero episode (All In Like, 4 min audio, created on the live site and rendered by the worker):** https://minimax-week-interdimensional-cable.vercel.app/watch/2752c892-9b8d-418c-9e29-207d8a11106c
 
-**Spend for that episode:** {{HERO_SPEND}}
+**Spend for that episode:** $0.00. MiniMax-M3, Speech 2.8 HD and Music 3.0 were free during MiniMax Week and no MiniMax-H3 request was made. The H3 path is implemented (reference-to-video, spend guard) but none of the submitted episodes use it.
 
 **Audio episode on the free models (2:12):** https://player.mux.com/9n00bwSpEQVU003A3v02r8PLMi5oOAv4p01lQNtqWSH2VlU. Two hosts, nine turns voiced by Speech 2.8 HD with per-line emotion, an 8 s theme and a 15 s sung credits recap by Music 3.0, all written by MiniMax-M3 from a one-line topic about smart fridges joining botnets. No MiniMax-H3 request was needed, so it cost nothing.
 
