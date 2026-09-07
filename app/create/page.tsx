@@ -4,6 +4,10 @@ import { requiresUserApiKeys } from "@/app/lib/api-keys";
 import { getTemplatesAction } from "./actions";
 import { CreateForm } from "./create-form";
 
+// Templates come from the database, so this page must not be prerendered at
+// build time (a build has no database, and Vercel builds without secrets).
+export const dynamic = "force-dynamic";
+
 export default async function CreatePage() {
   const templates = await getTemplatesAction();
 
