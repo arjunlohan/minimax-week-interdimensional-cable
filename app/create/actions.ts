@@ -3,6 +3,7 @@
 import { asc, eq, lt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import { start } from "workflow/api";
 
 import {
   encryptApiKeys,
@@ -12,8 +13,10 @@ import {
 } from "@/app/lib/api-keys";
 import { env } from "@/app/lib/env";
 import { recordMemorySignal, topicToKey } from "@/app/lib/memory-bank";
+import { checkRateLimit, createRateLimitError, getClientIp } from "@/app/lib/rate-limit";
 import * as schema from "@/db/schema";
 import type { ShowTemplate } from "@/db/schema";
+import { generateShowWorkflow } from "@/workflows/generate-show";
 
 import { durationOptionsFor, isValidDuration } from "./constants";
 import type { ShowFormat } from "./constants";
@@ -116,6 +119,12 @@ export async function createShowAction(formData: CreateShowInput): Promise<Creat
   // Frame chaining only means something when there are clips to chain.
   const useFrameChaining = formData.format === "video" && (formData.useFrameChaining ?? false);
 
+  // Refuse before a row exists, so a rate-limited visitor leaves no orphan show.
+  const rateLimit = await checkRateLimit(await getClientIp(), "generate-show");
+  if (!rateLimit.allowed) {
+    return { error: createRateLimitError(rateLimit).error };
+  }
+
   try {
     // Inside the try so a missing KEY_ENCRYPTION_SECRET reads as a clear error
     // on the form rather than an opaque server action failure.
@@ -155,28 +164,15 @@ export async function createShowAction(formData: CreateShowInput): Promise<Creat
       sourceShowId: show.id,
     });
 
-    // Start the generation workflow
+    // Start the generation workflow in-process. Calling our own route over
+    // HTTP needed a public base URL and fell back to localhost on Vercel.
     try {
-      const workflowUrl = `${env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000"}/api/workflows/generate-show`;
-      console.log("[createShowAction] Starting workflow at:", workflowUrl, "showId:", show.id);
-
-      const res = await fetch(workflowUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ showId: show.id }),
-      });
-      const data = await res.json();
-      console.log("[createShowAction] Workflow response:", res.status, JSON.stringify(data));
-
-      if (data.runId) {
-        await db
-          .update(schema.generatedShows)
-          .set({ workflowRunId: data.runId })
-          .where(eq(schema.generatedShows.id, show.id));
-        console.log("[createShowAction] Saved runId:", data.runId);
-      } else if (data.error) {
-        console.error("[createShowAction] Workflow returned error:", data.error);
-      }
+      const run = await start(generateShowWorkflow, [show.id]);
+      await db
+        .update(schema.generatedShows)
+        .set({ workflowRunId: run.runId })
+        .where(eq(schema.generatedShows.id, show.id));
+      console.warn("[createShowAction] Workflow started:", run.runId, "showId:", show.id);
     } catch (err) {
       console.error("[createShowAction] Failed to start generation workflow:", err);
       // Show was created; the user can retry from the progress page

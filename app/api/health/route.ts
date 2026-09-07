@@ -46,18 +46,19 @@ export async function GET() {
   // Names only, never values: enough to see whether the variables landed on
   // this deployment under the expected names and environment.
   const configuredNames = Object.keys(process.env)
-    .filter(name => /URL|MUX|GMI|KEY|SECRET|POSTGRES|PGHOST|PGUSER|PGDATABASE|H3_/i.test(name) && !/^(npm_|NEXT_|__)/.test(name))
+    .filter(name => /URL|MUX|GMI|KEY|SECRET|POSTGRES|PGHOST|PGUSER|PGDATABASE|H3_/i.test(name) && !/^(?:npm_|NEXT_|__)/.test(name))
     .sort();
   // Shape only, never the value: defined or not, length, and whether the
   // database URL even starts like one. Tells a blank variable from a wrong one.
+  const shapeNames = new Set<string>([...REQUIRED, ...OPTIONAL, ...configuredNames.filter(name => /^(?:MINIMAX_|MUX_|H3_)/.test(name))]);
   const shape = Object.fromEntries(
-    [...REQUIRED, ...OPTIONAL].map((name) => {
+    [...shapeNames].sort().map((name) => {
       const value = process.env[name];
       return [name, {
         defined: value !== undefined,
         length: value?.length ?? 0,
         trimmedLength: value?.trim().length ?? 0,
-        ...(name === "DATABASE_URL" ? { startsWithPostgres: /^postgres(ql)?:\/\//.test(value?.trim() ?? "") } : {}),
+        ...(name === "DATABASE_URL" ? { startsWithPostgres: /^postgres(?:ql)?:\/\//.test(value?.trim() ?? "") } : {}),
       }];
     }),
   );
