@@ -4,12 +4,13 @@ import { resolveSkillForShow } from "@/app/lib/skills/registry";
 import { runPass1Research } from "./pass1-research";
 import { generateHeadWriterDraft } from "./pass2-head-writer";
 import { runPass3VoiceAndPrune } from "./pass3-voice-prune";
-import { DramaturgyResultSchema } from "./schemas";
+import { DramaturgyResultSchema, ResearchBriefSchema } from "./schemas";
 import type {
   DramaturgyInput,
   DramaturgyProgressEvent,
   DramaturgyResult,
   PersonalizationContext,
+  ResearchBrief,
 } from "./types";
 
 export async function runDramaturgyPipeline(
@@ -54,18 +55,29 @@ export async function runDramaturgyPipeline(
   }
 
   const p1StartTime = Date.now();
-  const pass1Result = await runPass1Research({
-    topic: input.topic,
-    topicType: input.topicType,
-    familiarity: input.familiarity,
-    showSkill: skill,
-    userProfile: personalizationProfile ? { humorPreference: typeof personalizationProfile.humorPreference === "string" ? personalizationProfile.humorPreference : undefined } : undefined,
-    options: {
-      enableSearch: input.options?.enableSearch ?? true,
-      forceMock: input.options?.forceMock ?? false,
-      temperature: input.options?.temperature,
-    },
-  });
+  const suppliedBrief = input.researchBrief ? ResearchBriefSchema.safeParse(input.researchBrief) : null;
+  if (input.researchBrief && !suppliedBrief?.success) {
+    console.warn("[dramaturgy-orchestrator] Supplied research brief failed validation; researching again");
+  }
+  const pass1Result = suppliedBrief?.success ?
+      {
+        brief: suppliedBrief.data as ResearchBrief,
+        selectedAngle: (suppliedBrief.data as ResearchBrief).selectedAngle,
+        isMocked: Boolean((suppliedBrief.data as ResearchBrief).isMocked),
+        latencyMs: 0,
+      } :
+      await runPass1Research({
+        topic: input.topic,
+        topicType: input.topicType,
+        familiarity: input.familiarity,
+        showSkill: skill,
+        userProfile: personalizationProfile ? { humorPreference: typeof personalizationProfile.humorPreference === "string" ? personalizationProfile.humorPreference : undefined } : undefined,
+        options: {
+          enableSearch: input.options?.enableSearch ?? true,
+          forceMock: input.options?.forceMock ?? false,
+          temperature: input.options?.temperature,
+        },
+      });
   const pass1DurationMs = Date.now() - p1StartTime;
 
   // 4. Pass 2: Head-Writer Draft & Joke Construction

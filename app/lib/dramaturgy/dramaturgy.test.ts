@@ -22,7 +22,6 @@ import {
   evaluateSingleJokeDeterministic,
   runPass3VoiceAndPrune,
   sanitizeForContentFilter,
-  sanitizeForVeoRai,
 } from "./pass3-voice-prune";
 import {
   DramaturgyResultSchema,
@@ -626,10 +625,6 @@ describe("milestone 2: Multi-Pass Dramaturgy & Scripting Engine", () => {
       expect(sanitizedText).toContain("Colin");
       expect(report.isCleanForContentFilter).toBe(true);
       expect(report.replacementsApplied.length).toBeGreaterThanOrEqual(4);
-    });
-
-    it("keeps the legacy sanitizer name the show workflow imports", () => {
-      expect(sanitizeForVeoRai).toBe(sanitizeForContentFilter);
     });
 
     it("enforces profanity register filters cleanly", () => {

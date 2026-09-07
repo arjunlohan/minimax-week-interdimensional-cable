@@ -46,4 +46,5 @@ To be settled by `npm run gmi:smoke -- --video`: whether GMI's H3 output carries
 - Plain text in 5.6 s, JSON in 4.8 s for short prompts through `@ai-sdk/gmicloud`. No `<think>` text leaked into `result.text`.
 
 ### MiniMax-H3 (observed 2026-09-06, before credits)
+
 - With uploads working (portrait as image/jpg, line as audio/mpeg), the submission returned HTTP 402 `{"error": "Insufficient credits. Please add more credits to your account."}`. H3 is pay-as-you-go even during MiniMax Week; the free models kept working. The audio-strategy comparison is deferred until the account carries credits.

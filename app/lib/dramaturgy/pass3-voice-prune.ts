@@ -83,9 +83,6 @@ export function sanitizeForContentFilter(text: string): { sanitizedText: string;
   };
 }
 
-/** Legacy name; the show workflow imports it dynamically. */
-export const sanitizeForVeoRai = sanitizeForContentFilter;
-
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. Stylometric Voice Tuning Engine
 // ─────────────────────────────────────────────────────────────────────────────

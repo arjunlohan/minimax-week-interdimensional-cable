@@ -357,6 +357,12 @@ export interface DramaturgyInput {
   familiarity?: "beginner" | "familiar" | "expert";
   userId?: string;
   language?: string;
+  /**
+   * A brief the caller already produced (the workflow's research step stores
+   * one). When present and valid, pass 1 is skipped instead of researching the
+   * same topic a second time.
+   */
+  researchBrief?: ResearchBrief;
   options?: {
     enableSearch?: boolean;
     forceMock?: boolean;
