@@ -69,4 +69,10 @@ Brief: rebuild Interdimensional Cable on MiniMax models served through GMI Cloud
 
 ## Review
 
-(filled in at the end)
+State at 2026-09-06 21:40 PDT, commit 0c05a00 on `main` (public).
+
+- Verified this session: `npx tsc --noEmit` 0 errors; `npm run lint` 0 errors; `npm test` 412 passing in 19 files; `npm run build` clean, including a build with the env file hidden (18 routes), which is what Vercel runs before variables are set.
+- Live on GMI Cloud with the free models: two complete audio episodes (a two-host podcast and a desk show on the hero topic), each with an M3-written script grounded on fetched sources where Hacker News had any, Speech 2.8 HD voices with per-line emotion, a Music 3.0 theme and a sung credits recap, assembled by ffmpeg and published to Mux; in-character chat and a 35 s audio tangent from the watch page; the M3 summary path failing honestly on a talk without a transcript.
+- Not verified: MiniMax-H3. Every submission returns HTTP 402 until the GMI account carries credits, so the reference-audio experiment, the audio-strategy decision, the 90 s hero episode, the spend ledger and the README placeholders all wait on the deposit. The video path is covered by 82 workflow tests and the payload builders by unit tests, but no clip has been rendered.
+- Deployment: `DOCS/deploy.md` lists the Vercel variables and the hosted Postgres step; the build no longer needs secrets.
+- Next actions, in order, once credits exist: `npm run gmi:smoke -- --only=video` ($0.26), pick the audio strategy from the two clips, create a 90 s video show from `/create` with the SNL Like template and the hero topic, fill `{{HERO_WATCH_URL}}` and `{{HERO_SPEND}}`, record the 3-minute demo, submit.
