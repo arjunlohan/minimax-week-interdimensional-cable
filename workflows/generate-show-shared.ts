@@ -298,3 +298,24 @@ export class StorageFullError extends Error {
     this.name = "StorageFullError";
   }
 }
+
+/**
+ * Maps with at most `limit` items in flight, preserving order. GMI's speech
+ * queue can hold a line for minutes, so lines are voiced a few at a time
+ * rather than one after another.
+ */
+export async function mapWithConcurrency<T, R>(items: readonly T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results: R[] = Array.from({ length: items.length });
+  let next = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    for (;;) {
+      const index = next++;
+      if (index >= items.length) {
+        return;
+      }
+      results[index] = await fn(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}

@@ -1,7 +1,10 @@
 /* eslint-disable no-console */
 import type { AudioStrategy, ClipAudioSource, ClipMode, ClipNote, EngineNotes, Host, MusicStepResult, ProgressEvent, ShowPlan, TranscriptSegment, VoicedLine, VoicesStepResult } from "./generate-show-shared";
-import { apportionSegmentsByWords, assignVoices, audioStrategyFrom, clipSecondsForLine, ENGINES, ensureLyricTags, firstLyricLine, MAX_CONTENT_REVISIONS, MAX_TRANSIENT_RETRIES, needsTtsOverlay, offsetSegments, referenceAudioUsable, resolveShowFormat, StorageFullError, timeSegmentsFromDurations, transcriptFromSegments } from "./generate-show-shared";
+import { apportionSegmentsByWords, assignVoices, audioStrategyFrom, clipSecondsForLine, ENGINES, ensureLyricTags, firstLyricLine, mapWithConcurrency, MAX_CONTENT_REVISIONS, MAX_TRANSIENT_RETRIES, needsTtsOverlay, offsetSegments, referenceAudioUsable, resolveShowFormat, StorageFullError, timeSegmentsFromDurations, transcriptFromSegments } from "./generate-show-shared";
 import { closeStream, writeToStream } from "./workflow-progress";
+
+/** Lines in flight at once on the speech queue. */
+const VOICE_CONCURRENCY = 4;
 
 /**
  * The Node-dependent half of the show pipeline: one implementation per
@@ -462,10 +465,7 @@ export async function voicesStepImpl(
 
   const strategy = audioStrategyFrom(env.H3_AUDIO_STRATEGY);
   console.log(`[workflow:voices] Synthesizing ${segments.length} lines with Speech 2.8 HD (strategy: ${strategy})`);
-  const lines: VoicedLine[] = [];
-  for (const [i, segment] of segments.entries()) {
-    lines.push(await voiceLine(segment, i, assignments, hosts, strategy));
-  }
+  const lines = await mapWithConcurrency(segments, VOICE_CONCURRENCY, (segment, i) => voiceLine(segment, i, assignments, hosts, strategy));
 
   await patchEngineNotes(db, schema, showId, {
     audioStrategy: strategy,
