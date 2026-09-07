@@ -301,6 +301,81 @@ Output ONLY the revised punchline sentence.`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 3b. Runtime Fit
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Speech 2.8 HD speaks about 2.5 words per second (measured on real episodes). */
+export const RUNTIME_WORDS_PER_SECOND = 2.5;
+
+/** The most words a beat of this length can carry, with ten percent of slack. */
+export function maxWordsForBeat(durationSeconds: number): number {
+  return Math.max(10, Math.round(durationSeconds * RUNTIME_WORDS_PER_SECOND * 1.1));
+}
+
+/**
+ * MiniMax-M3 writes long: a beat planned at 8 seconds routinely comes back
+ * with forty words, which speaks for sixteen. Every beat is one clip (video)
+ * or one turn (audio) whose slot was fixed up front, so an overlong line is
+ * tightened by M3 here, keeping the joke, rather than clipped or let overrun
+ * downstream. A line that cannot be tightened is kept as written.
+ */
+export async function fitSegmentsToRuntime(
+  segments: FinalScriptSegment[],
+  skill: ShowSkill,
+  options: { tighten?: boolean } = {},
+): Promise<{ segments: FinalScriptSegment[]; tightened: number; overlong: number }> {
+  const canTighten = (options.tighten ?? true) && Boolean(resolveGmiKey());
+  const result: FinalScriptSegment[] = [];
+  let tightened = 0;
+  let overlong = 0;
+
+  for (const segment of segments) {
+    const maxWords = maxWordsForBeat(segment.durationSeconds);
+    const words = countWords(segment.text);
+    if (words <= maxWords) {
+      result.push(segment);
+      continue;
+    }
+    overlong++;
+    if (!canTighten) {
+      result.push(segment);
+      continue;
+    }
+
+    try {
+      const reply = await generateText({
+        system: "You are a late-night script editor. Output only the tightened line, nothing else.",
+        prompt: `This line belongs to ${segment.speaker} on "${skill.name}" and is written for a ${segment.durationSeconds}-second beat, which fits at most ${maxWords} spoken words. It has ${words}.
+
+LINE:
+"${segment.text}"
+
+Rewrite it in at most ${maxWords} words. Keep the speaker's voice, the setup and the punchline in that order, and keep any bracketed stage tags such as [laughs] exactly where they are. Cut qualifiers, repeated ideas and throat-clearing first. Output only the line.`,
+        temperature: 0.6,
+        // M3 thinks before it answers and that draws on the same budget; the
+        // line itself is one sentence.
+        maxOutputTokens: 8192,
+      });
+      const cleaned = sanitizeForContentFilter(reply.replace(/^["']|["']$/g, "").trim()).sanitizedText;
+      const newWords = countWords(cleaned);
+      if (cleaned.length > 0 && newWords < words && newWords <= Math.round(maxWords * 1.15)) {
+        result.push({ ...segment, text: cleaned, wordCount: newWords });
+        tightened++;
+        console.log(`[pass3] Tightened ${segment.speaker}'s line from ${words} to ${newWords} words for a ${segment.durationSeconds}s beat`);
+      } else {
+        console.warn(`[pass3] Could not tighten ${segment.speaker}'s ${words}-word line to ${maxWords} words (got ${newWords}); keeping it`);
+        result.push(segment);
+      }
+    } catch (err) {
+      console.warn(`[pass3] Tightening failed for ${segment.speaker}'s line; keeping it:`, err instanceof Error ? err.message : String(err));
+      result.push(segment);
+    }
+  }
+
+  return { segments: result, tightened, overlong };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 4. Pass 3 Main Runner
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -394,6 +469,13 @@ export async function runPass3VoiceAndPrune(input: Pass3Input): Promise<Pass3Out
       evaluations,
       laughsPerMinute: Number(((evaluations.length / (Math.max(30, draft.metrics.totalDurationSeconds) / 60))).toFixed(2)),
     };
+  }
+
+  // 3b. Runtime fit: tighten lines that would speak past their planned slot.
+  const fitted = await fitSegmentsToRuntime(segments, skill, { tighten: !options?.forceMock });
+  if (fitted.tightened > 0) {
+    segments = fitted.segments;
+    rawTranscript = segments.map(s => (isDesk ? `[${s.speaker}]: ${s.text}` : `${s.speaker}: ${s.text}`)).join("\n\n");
   }
 
   // Voice Tuning Global Report

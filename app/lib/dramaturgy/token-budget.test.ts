@@ -52,8 +52,8 @@ describe("output token budgets", () => {
   }
 
   it("sets a budget everywhere a model is called", () => {
-    // pass 1 brief, pass 2 desk draft, pass 2 podcast draft, pass 3 punch-up
-    expect(found.length).toBe(4);
+    // pass 1 brief, pass 2 desk draft, pass 2 podcast draft, pass 3 punch-up, pass 3 runtime fit
+    expect(found.length).toBe(5);
   });
 
   it("never budgets below what the model spends thinking", () => {

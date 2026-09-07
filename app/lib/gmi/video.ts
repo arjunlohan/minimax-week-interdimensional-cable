@@ -280,7 +280,9 @@ export function buildClipPrompt(segment: ClipPromptInput, context: ClipPromptCon
   }
 
   const delivery = segment.actingDirection?.trim();
-  const line = segment.text.trim().replace(/\s+/g, " ");
+  // Stage tags such as [laughs] or [whispering] steer the speech synthesis;
+  // spoken aloud or drawn on screen they are noise, so they leave the prompt.
+  const line = segment.text.replace(/\[[^\]]{1,40}\]/g, " ").trim().replace(/\s+/g, " ");
   if (line) {
     parts.push(`${host.name} says${delivery ? ` (${sanitizeVisualPrompt(delivery)})` : ""}: "${line}"`);
   }

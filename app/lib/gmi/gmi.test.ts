@@ -135,7 +135,7 @@ describe("minimax-h3 payloads", () => {
 
   it("writes the spoken line and the consistency asks into the clip prompt", () => {
     const prompt = buildClipPrompt(
-      { text: "Tonight, the pigeons have unionized.", speaker: "Colin Jest", actingDirection: "deadpan" },
+      { text: "[deadpan] Tonight, the pigeons have unionized. [beat]", speaker: "Colin Jest", actingDirection: "deadpan" },
       {
         hosts: [{ name: "Colin Jest", position: "left" }, { name: "Michael Chey", position: "right" }],
         showType: "conversation",
