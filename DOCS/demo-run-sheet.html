@@ -426,8 +426,8 @@
     <h2>Before you press record</h2>
     <p class="sub">Everything here comes from what the site actually shows; nothing in the script points at a thing that is not on screen.</p>
     <ul class="check">
-      <li><input type="checkbox" id="c1"><label for="c1">The render worker is running on your laptop (or you are recording the create step on localhost). Without it, a four-minute episode never finishes on Vercel: its functions stop at 300 seconds and Speech 2.8 alone can queue for five minutes a line.</label></li>
-      <li><input type="checkbox" id="c2"><label for="c2">The cold open needs a finished episode. Either use the one you generate on camera (you edit after it finishes anyway) or the 5-minute Pixar episode already rendered locally.</label></li>
+      <li><input type="checkbox" id="c1"><label for="c1">The render worker is running on your laptop: <code>npm run dev:hosted</code> in one terminal, <code>npm run worker</code> in another, both from the repo. Without it, a four-minute episode never finishes on Vercel: its functions stop at 300 seconds and Speech 2.8 alone can queue for five minutes a line. The create page says "Render worker offline" when it is not up.</label></li>
+      <li><input type="checkbox" id="c2"><label for="c2">The cold open needs a finished episode. Either use the one you generate on camera (you edit after it finishes anyway) or the 5-minute All In Like Pixar episode that is already on the live site under Browse.</label></li>
       <li><input type="checkbox" id="c3"><label for="c3">Record at 1080p, landscape. Hide bookmarks and other tabs. Slow cursor. Cuts every 3 to 5 seconds in the edit, zooms on the model strip, the pipeline rows and the memory card.</label></li>
       <li><input type="checkbox" id="c4"><label for="c4">Captions on: burn in the eight caption chips above; most viewers on X watch muted.</label></li>
       <li><input type="checkbox" id="c5"><label for="c5">Only open episodes made after the rebuild. Older ones label their engines "Pre-rebuild" in the receipt panel.</label></li>
