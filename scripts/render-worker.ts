@@ -152,7 +152,10 @@ async function main(): Promise<void> {
     try {
       await tick();
     } catch (err) {
-      console.error("[worker] tick failed:", err instanceof Error ? err.message : err);
+      // drizzle wraps driver errors; the cause says whether it was a dropped
+      // connection, a timeout or something that needs a look.
+      const cause = err instanceof Error && err.cause instanceof Error ? ` (${err.cause.message})` : "";
+      console.error("[worker] tick failed:", (err instanceof Error ? err.message : String(err)).slice(0, 120) + cause);
     }
     await new Promise(resolve => setTimeout(resolve, POLL_MS));
   }
