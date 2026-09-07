@@ -62,8 +62,9 @@ interface WatchContentProps {
 
 export function WatchContent({ show, template }: WatchContentProps) {
   const hosts = (template.hosts ?? []) as Array<{ name: string; personality: string; position?: string }>;
-  // Mirrors checkShowFormatStep in workflows/generate-show.ts: > 40s is an audio podcast.
-  const isAudio = (show.durationSeconds ?? 16) > 40;
+  // The show row records its format explicitly (MiniMax-H3 video episodes and
+  // Speech 2.8 HD audio episodes overlap in length, so duration cannot decide).
+  const isAudio = show.format === "audio";
   // The pipeline persists startTimeSeconds/endTimeSeconds; this component reads
   // startTime/endTime. Without this mapping the timestamps render as NaN:NaN.
   const segments: TranscriptSegment[] = ((show.transcriptSegments ?? []) as RawSegment[]).map((seg, i) => {
@@ -161,6 +162,8 @@ export function WatchContent({ show, template }: WatchContentProps) {
             isAudio={isAudio}
             hasMux={Boolean(show.muxPlaybackId)}
             language={show.language ?? "en"}
+            hasTheme={Boolean(show.themeLyrics)}
+            hasCredits={Boolean(show.creditsLyrics)}
           />
 
           {/* Show Details */}

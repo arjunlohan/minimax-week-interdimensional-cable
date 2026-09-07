@@ -148,7 +148,7 @@ export function ChatPanel({ showId, topic, transcript, researchContext, hostName
       >
         <span>Live Host Q&A & Tangents</span>
         <span className="flex items-center gap-2">
-          <span className="text-[10px] text-accent font-bold uppercase tracking-wider">Gemini 3.7 Flash</span>
+          <span className="text-[10px] text-accent font-bold uppercase tracking-wider">MiniMax-M3</span>
           <svg
             className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`}
             fill="none"
@@ -218,7 +218,7 @@ export function ChatPanel({ showId, topic, transcript, researchContext, hostName
             {activeAudio && (
               <div className="border-2 border-accent bg-accent/10 p-2.5 my-2">
                 <span className="block text-[10px] font-bold uppercase text-accent mb-1" style={{ fontFamily: "var(--font-space-mono)" }}>
-                  🎙️ Playing Host Audio Tangent (Gemini 3.1 Flash TTS)
+                  🎙️ Playing Host Audio Tangent (Speech 2.8 HD)
                 </span>
                 <audio controls src={activeAudio} className="w-full h-8" autoPlay />
               </div>
@@ -232,7 +232,7 @@ export function ChatPanel({ showId, topic, transcript, researchContext, hostName
                     className="text-xs text-foreground-muted animate-pulse"
                     style={{ fontFamily: "var(--font-space-mono)" }}
                   >
-                    {isGeneratingTangent ? "🎙️ Synthesizing 30s Audio Tangent with Gemini TTS..." : "Thinking with Gemini 3.7 Flash..."}
+                    {isGeneratingTangent ? "🎙️ Synthesizing 30s Audio Tangent with Speech 2.8 HD..." : "Thinking with MiniMax-M3..."}
                   </span>
                 </div>
               </div>
@@ -302,7 +302,7 @@ export function ChatPanel({ showId, topic, transcript, researchContext, hostName
                 type="button"
                 onClick={() => handleSend(true)}
                 disabled={isPending || isGeneratingTangent || !input.trim()}
-                title="Generate voice speech response with Gemini TTS"
+                title="Generate a spoken reply with Speech 2.8 HD"
                 className="border-l-3 border-border bg-accent text-foreground px-3 py-3 text-xs font-bold transition-colors hover:brightness-110 disabled:opacity-50"
                 style={{ fontFamily: "var(--font-space-mono)" }}
               >

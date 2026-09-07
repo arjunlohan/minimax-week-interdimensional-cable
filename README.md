@@ -1,296 +1,183 @@
 # Interdimensional Cable
 
-### An autonomous, memory-adaptive on-demand podcast and video show network
+### An autonomous AI showrunner: any topic in, a late-night comedy episode out
 
-**Built for the [All Things Agentic Hackathon](https://allthingsagentichackathon.devpost.com/) (Google Cloud & Gemini)**
+**Built for [MiniMax Week × GMI Cloud](https://www.gmicloud.ai/minimax-week) (Aug 24 to Sep 6, 2026). Track: Synthesis, "agents that direct".**
 
-[![Gemini 3.7 Flash](https://img.shields.io/badge/Google%20Gemini-3.7%20Flash-4285F4?logo=google&logoColor=white)](https://ai.google.dev/)
-[![Vertex AI Veo 3.1](https://img.shields.io/badge/Vertex%20AI-Veo%203.1%20Video-34A853?logo=googlecloud&logoColor=white)](https://cloud.google.com/vertex-ai)
-[![Gemini 3.1 Flash TTS](https://img.shields.io/badge/Gemini%203.1%20Flash-Multi--Speaker%20TTS-FBBC05?logo=google&logoColor=white)](https://ai.google.dev/)
-[![Google Embeddings](https://img.shields.io/badge/Embeddings-text--embedding--004-EA4335?logo=google&logoColor=white)](https://ai.google.dev/)
+Pick a late-night format, give it a topic or a link, and a durable workflow researches it, writes it in a three-pass writers' room, performs every line, renders the host on camera, scores a theme, sings the credits and publishes a 60 to 120 second video episode (or an audio podcast up to five minutes), unattended. Four MiniMax models do the creative work, all served through GMI Cloud: **MiniMax-M3** writes and directs, **Speech 2.8 HD** performs, **MiniMax-H3** renders each clip from the host's portrait and that line's audio, and **Music 3.0** composes the theme and the credits. The host then answers questions in character, remembers what you asked, and a coordinator can pick tomorrow's episode from Hacker News on its own.
 
 ---
 
-## 🎯 Executive Pitch: Moving from Static Broadcast to Autonomous Agentic Media
+## What you will see in 60 seconds
 
-Traditional podcasts and comedy talk shows are static, broadcast media: recorded once for a generic audience, non-interactive, and impossible to steer.
+**Hero episode:** {{HERO_WATCH_URL}}
 
-**Interdimensional Cable** redefines the medium as an **autonomous, adaptive on-demand studio**. It combines **multi-agent orchestration**, **Google Search grounding**, **Veo 3.1 video generation on Vertex AI** (`veo-3.1-generate-001`), **multi-speaker Gemini 3.1 Flash TTS**, and a **four-tier cognitive memory store** on Postgres/pgvector (`app/lib/memory-bank.ts`):
+**Spend for that episode:** {{HERO_SPEND}}
 
-1. **On-Demand Custom Show Synthesis**: Turn any niche topic, URL, or breaking news item into a fully produced monologue or multi-host news desk episode in a single unattended run (roughly 2-5 minutes of wall clock for a 16-second video show; audio-only shows are faster).
-2. **Persistent Memory Bank (Collaborative Partner Track)**: As you listen and converse with the podcast, the agent remembers your questions, concept mastery level, and humor preferences across sessions, dynamically adapting future episodes and explanations.
-3. **Live In-Character Q&A & Tangents**: Interrupt the hosts mid-stream to ask questions. Hosts reply in their authentic comedic voices using Gemini Flash + Gemini TTS and can spin off instant 30-second audio tangent deep dives.
-4. **Autonomous Ingestion Coordinator (Taskmaster Track)**: An event-driven coordinator monitors trending feeds (e.g. Hacker News), matches stories against your memory profile, picks the optimal host persona, and autonomously dispatches the entire production workflow.
-
----
-
-## 🏆 Hackathon Track Alignment
-
-### Track 1: The Collaborative Partner
-
-- **Stateful Multi-Turn Dialogue**: Multi-turn in-character dialogue where the host references transcript cues and deep research.
-- **Persistent Memory Bank (`user_memories`)**: Tracks concept mastery (e.g. beginner vs. expert in quantum computing), preferred humor styles, and interaction history across sessions.
-- **Real-Time Context Retrieval (RAG)**: Uses **Google `text-embedding-004`** + pgvector cosine similarity to retrieve relevant transcript chunks and background knowledge.
-
-### Track 2: The Taskmaster
-
-- **Event-Driven Coordinator (`scripts/autonomous-trend-agent.ts`)**: Each cycle pulls top stories from the Hacker News Firebase API, ranks them against the persisted memory profile using Gemini 3.7 Flash structured output, routes to a host persona, provisions the show row, and dispatches the durable workflow. No human input.
-- **Autonomous Multi-Step Routing**: Evaluates story depth, selects host templates, provisions database records, and triggers background workflow execution.
-- **Durable Workflows**: Every stage is a Vercel Workflow `"use step"` boundary (`workflows/generate-show.ts`), so completed steps are checkpointed and never re-executed on retry. A failed Mux upload preserves the rendered file (`generated_shows.local_render_path`) so re-running costs no paid regeneration. The browser polls `generated_shows.status` for progress.
+1. A title card with a theme hook Music 3.0 recorded for this episode, in the show's voice.
+2. The host, rendered by MiniMax-H3 from one portrait, delivering each line in a Speech 2.8 HD voice with the emotion the script asked for. Same face, same desk, same voice, every clip.
+3. Jokes written by MiniMax-M3 from sources it actually read, not from a vibe. The watch page lists them.
+4. End credits that sing the episode's three best jokes back to you.
+5. A chat box where the host answers in character, in its own voice, and a memory card that shows what the show has learned about you.
 
 ---
 
-## 🏗️ System Architecture
+## How it works
+
+Every stage is a checkpointed step in a Vercel Workflow (`workflows/generate-show.ts`). A failed step resumes from the last completed one instead of starting over, and every intermediate result lands in Postgres as it arrives.
 
 ```mermaid
 flowchart TB
-    subgraph ClientLayer ["Client & Listener Experience"]
-        UserUI["Web Studio UI (Next.js 16 + React 19)"]
-        LivePlayer["Interactive Video & Synced Transcript Player"]
-        ChatEngine["Live In-Character Host Q&A (Voice + Text)"]
-        MemoryView["Agent Memory Profile Dashboard"]
+    Topic["Topic · article URL · Hacker News story"]
+
+    subgraph MiniMax ["MiniMax models, served through GMI Cloud"]
+        Research["1 · Research<br/>MiniMax-M3 reads the fetched sources"]
+        Script["2 · Three-pass writers' room<br/>MiniMax-M3, beats of 8 to 12 s"]
+        Voices["3 · Voices<br/>Speech 2.8 HD, one voice per line, emotion from the acting direction"]
+        Clips["4 · Clips<br/>MiniMax-H3 reference-to-video: host portrait + that line's audio"]
+        Score["5 · Score<br/>Music 3.0: theme hook and sung credits, lyrics by M3"]
     end
 
-    subgraph AgentCore ["Google Multi-Agent Orchestrator"]
-        TaskmasterAgent["Taskmaster: Autonomous Ingestion & Routing"]
-        ResearchAgent["Research Agent · Gemini 3.7 Flash + Google Search Grounding"]
-        DramaturgyAgent["Persona & Scripting Agent · Gemini 3.7 Flash, 3-pass"]
-        MemoryBankAgent["Memory Bank Agent (Cross-Session Knowledge Extraction)"]
+    subgraph Infra ["Supporting infrastructure, named rather than hidden"]
+        Preflight["Capacity preflight · Mux"]
+        Assemble["6 · Assembly · FFmpeg<br/>title card, clips, end card"]
+        Publish["7 · Publish · Mux direct upload, HLS"]
+        Guard["Spend guard · app/lib/gmi/spend.ts"]
+        DB[("Postgres: shows, transcripts, chat, memory, spend ledger")]
     end
 
-    subgraph GoogleAI ["Google AI · Vertex AI"]
-        VideoGen["Veo 3.1 (veo-3.1-generate-001) · REST predictLongRunning"]
-        GeminiTTS["Gemini 3.1 Flash TTS (multi-speaker neural synthesis)"]
-    end
-
-    subgraph External ["Non-Google components (named explicitly)"]
-        FFmpeg["FFmpeg concat demuxer (app/lib/stitch.ts)"]
-        MuxDelivery["Mux · direct upload + HLS playback"]
-    end
-
-    subgraph DataLayer ["Google Cloud SQL for PostgreSQL 16 + pgvector"]
-        DBSchema["Shows, Clips, Transcripts, Chat Messages"]
-        DBMemory["Agent Memory Bank & User Preferences"]
-        DBVector["text-embedding-004 vectors (768-dim, HNSW cosine index)"]
-    end
-
-    UserUI --> DramaturgyAgent
-    TaskmasterAgent --> ResearchAgent
-    TaskmasterAgent --> MemoryBankAgent
-    MemoryBankAgent <--> DBMemory
-
-    ResearchAgent --> DramaturgyAgent
-    DramaturgyAgent --> VideoGen
-    DramaturgyAgent --> GeminiTTS
-    VideoGen --> FFmpeg
-    GeminiTTS --> FFmpeg
-    FFmpeg --> MuxDelivery
-    MuxDelivery --> DBSchema
-
-    LivePlayer <--> ChatEngine
-    ChatEngine <--> MemoryBankAgent
-    ChatEngine --> GeminiTTS
-    MemoryBankAgent --> DBVector
+    Topic --> Research --> Script --> Preflight --> Voices --> Clips --> Score --> Assemble --> Publish
+    Voices -. reference audio per line .-> Clips
+    Guard -. refuses past the caps .-> Clips
+    Publish --> DB
 ```
 
----
-
-## ☁️ Google Cloud Footprint
-
-| Requirement                                    | Satisfied by                                                                                                                                                              | Evidence                                             |
-| :--------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :--------------------------------------------------- |
-| Gemini 3.5 or newer via Gemini API / Vertex AI | **Gemini 3.7 Flash** for research, scripting and memory extraction; **Gemini 3.1 Flash TTS**; **text-embedding-004**                                                      | `app/lib/genai.ts`, `app/lib/tts.ts`, `db/search.ts` |
-| A Google agent framework                       | **Google GenAI SDK** (`@google/genai`) across 9 runtime modules — grounding, thinking level, structured output, embeddings, multi-speaker speech config, video operations | `app/lib/genai.ts` and callers                       |
-| A Google Cloud infrastructure service          | **Cloud SQL for PostgreSQL 16** with `pgvector` 0.8.5, holding every show, transcript, chat message, memory record and embedding                                          | `scripts/provision-cloud-sql.sh`, `db/index.ts`      |
-| Bonus model integration                        | **Veo 3.1** (`veo-3.1-generate-001`) on Vertex AI generates every video clip                                                                                              | `app/lib/vertex-video.ts`                            |
-
-Instance `ic-pg` runs in `us-central1` on project `gen-lang-client-0573852365`.
+Video path: research, script, voices, generate-clips, music, stitch, upload. Audio path: research, script, voices, music, stitch, upload. Show statuses as they advance: `researching`, `scripting`, `voicing`, `generating`, `scoring`, `stitching`, `uploading`, `ready`.
 
 ---
 
-## 🛠️ Google Agentic & Gemini Stack
+## Model map
 
-| Component                      | Technology                                                                                               | Purpose                                                                                                                                                                                                                                                                                                                                                                   |
-| :----------------------------- | :------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Reasoning & Planning**       | **Gemini 3.7 Flash** (`@google/genai`)                                                                   | Autonomous research, comedy dramaturgy, multi-host banter scripting.                                                                                                                                                                                                                                                                                                      |
-| **Search Grounding**           | **Gemini Google Search Grounding**                                                                       | Dynamic factual grounding for breaking news and technical topics.                                                                                                                                                                                                                                                                                                         |
-| **Video Clip Generation**      | **Vertex AI Veo 3.1** (`veo-3.1-generate-001`) via REST `predictLongRunning` (`app/lib/vertex-video.ts`) | Video generation, pinned to 720p 16:9 by the show workflow. Continuity across turns via boundary-frame chaining (`extractFrame` → `firstFrame`) plus reference-asset anchoring for host face consistency. An alternate Gemini Developer API path (`gemini-omni-1.1-flash`, `app/lib/veo.ts`) is implemented behind `GEMINI_VIDEO_API_KEY` and is **not** the active path. |
-| **Voice Synthesis (TTS)**      | **Gemini 3.1 Flash TTS** (`gemini-3.1-flash-tts-preview`)                                                | Multi-speaker neural voice generation (used for shows, tangents, and 5m podcasts).                                                                                                                                                                                                                                                                                        |
-| **Vector Embeddings**          | **Google `text-embedding-004`** (768 dimensions)                                                         | Transcript chunk embeddings and semantic vector search in PostgreSQL.                                                                                                                                                                                                                                                                                                     |
-| **Memory Extraction**          | **Gemini 3.7 Flash**                                                                                     | Autonomous extraction of concept mastery, humor preferences, and listener insights.                                                                                                                                                                                                                                                                                       |
-| **Autonomous Coordinator**     | **Custom coordinator** (`scripts/autonomous-trend-agent.ts`) on the **Google GenAI SDK**                 | Pulls Hacker News top stories, ranks against the memory profile with Gemini 3.7 Flash structured output, provisions the show, dispatches the durable workflow.                                                                                                                                                                                                            |
-| **Application State**          | **Google Cloud SQL for PostgreSQL 16** (`pgvector`, HNSW cosine index)                                   | Every show, transcript, chat message, memory record and embedding. Reached through the Cloud SQL Auth Proxy.                                                                                                                                                                                                                                                              |
-| **Video Delivery & Streaming** | **Mux Video + HLS**                                                                                      | Adaptive bitrate streaming and multi-language track management.                                                                                                                                                                                                                                                                                                           |
-| **Video Compositor**           | **FFmpeg** (`app/lib/stitch.ts`)                                                                         | Local concat-demuxer stitching with a 48 kHz AAC re-encode fallback. Remotion Lambda (AWS) renders the separate legacy social-clip feature and is **not** on the show path.                                                                                                                                                                                               |
+Every model call in the product goes through one shared layer, `app/lib/gmi/`, so the model id, the key scope and the retry policy live in exactly one place.
+
+| Model                                                                                          | Served through                                                            | What it does here                                                                                                                                                                                                                                                                                                                     | File                                                                                                                                              |
+| :--------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **MiniMax-M3** (`MiniMaxAI/MiniMax-M3`, 1M context, free during MiniMax Week)                  | GMI Cloud LLM endpoint, via the Vercel AI SDK provider `@ai-sdk/gmicloud` | Grounded research on fetched sources (Hacker News search and article pages); the three-pass writers' room (`pass1-research`, `pass2-head-writer` with 8 to 12 s beats, `pass3-voice-prune`); memory extraction; in-character chat and tangents; the Taskmaster's story ranking; summaries of imported talks; theme and credits lyrics | `app/lib/gmi/text.ts`, `app/lib/dramaturgy/`, `app/lib/memory-bank.ts`, `app/watch/[showId]/chat/actions.ts`, `scripts/autonomous-trend-agent.ts` |
+| **MiniMax-H3** (video, 4 to 15 s per clip, 768P or 2K, $0.13 per request, the only paid model) | GMI Cloud request queue (`console.gmicloud.ai/api/v1/ie/requestqueue`)    | Every clip of a video episode, in reference-to-video mode: the show's host portrait as a reference image and that line's Speech 2.8 audio as reference audio. Content refusals surface as `GmiContentFilterError` so the line can be revised and retried                                                                              | `app/lib/gmi/video.ts`, driven by `workflows/generate-show.ts`; spend guard in `app/lib/gmi/spend.ts`                                             |
+| **Speech 2.8 HD** (`minimax-tts-speech-2.8-hd`, free during the week)                          | GMI Cloud request queue                                                   | One voice per line, emotion mapped from the script's acting directions, a fixed voice per host persisted on the show; the podcast format (audio episodes up to 5 min); live chat replies and audio tangents                                                                                                                           | `app/lib/gmi/speech.ts`, `app/lib/tts.ts`, voice catalog in `app/lib/gmi/voices.ts`                                                               |
+| **Music 3.0** (`minimax-music-3.0`, free)                                                      | GMI Cloud request queue                                                   | A theme hook in the show's voice and an end-credits song that sings the episode's three best jokes, both rendered per episode and mixed under a title card and an end card                                                                                                                                                            | `app/lib/gmi/music.ts`, mixed by `app/lib/assemble.ts`                                                                                            |
+| **Voice clone 2.8 HD** (`minimax-audio-voice-clone-speech-2.8-hd`)                             | GMI Cloud request queue                                                   | Wired and optional: clone a voice from a sample and speak a line with it                                                                                                                                                                                                                                                              | `app/lib/gmi/speech.ts` (`cloneVoiceAndSpeak`)                                                                                                    |
+
+Shared plumbing: `app/lib/gmi/client.ts` (one key, both GMI surfaces, 429 and 5xx retry), `app/lib/gmi/queue.ts` (submit, poll, download), `app/lib/gmi/upload.ts` (portraits and audio lines become public URLs for H3).
+
+Supporting infrastructure, deliberately not MiniMax and named as such: **Vercel Workflow DevKit** (durable, checkpointed steps), **Postgres with Drizzle** (`db/schema.ts`; full-text search replaced the old embeddings), **Mux** (direct upload, HLS playback), **FFmpeg** (assembly), **Next.js 16**.
 
 ---
 
-## 🚀 Quick Start
+## How far the models are pushed
 
-### 1. Prerequisites
+- **Reference-audio performances.** H3 accepts reference images and reference audio, but not together with first and last frames, so continuity is carried by anchors rather than frame chaining: every clip gets the host's portrait plus that exact line as spoken by Speech 2.8 HD, and the prompt asks the host to perform the attached line in sync. The host keeps one face, one desk and one voice across an 8 to 12 clip episode. `H3_AUDIO_STRATEGY` selects `reference` (default), `native` (H3 voices the line itself) or `overlay` (the Speech 2.8 line always replaces the clip's track); a silent clip always falls back to the overlay.
+- **Per-line emotion.** The writers' room attaches an acting direction to every line; the voice stage maps it onto Speech 2.8's emotions (`calm`, `happy`, `sad`, `angry`, `fearful`, `disgusted`, `surprised`) and synthesizes each line on its own, which is also what lets a four-seat panel keep four distinct voices. Voices are assigned once and stored on the show (`voice_assignments`), so a retry never recasts the host.
+- **Beats planned for the video model.** The head writer drafts in 8 to 12 second beats, the window where H3 stays sharp, and the voice pass prunes to the exact runtime. Beat durations are clamped to H3's 4 to 15 s range before submission, never silently truncated after.
+- **A show that scores itself.** M3 writes a theme hook in the show's own voice and an end-credits song built from the episode's three best jokes, with Music 3.0's structure tags; Music 3.0 renders both per episode, and the watch page shows the lyrics it was given.
+- **M3 as the whole writers' room.** Research reads fetched sources whole (the 1M context makes that cheap), the head writer and the voice pass are separate calls with separate briefs, and structured output is validated with Zod with one repair round that feeds the validation error back (`generateJson`). M3's reasoning is stripped before parsing.
+- **A spend guard, not a spend hope.** H3 is the only paid model. Every submission is written to the `gmi_spend` ledger before it is sent, so a crash after submission still counts. Two caps, both refusing rather than degrading: `H3_MAX_REQUESTS_PER_RUN` (default 14) and `H3_SESSION_CAP_USD` (default $8 for this database).
+- **The honesty rule.** No canned content on failure. An article that cannot be read fails the run instead of being invented, an empty model reply throws with the finish reason, a refused clip gets a rewritten line and a retry rather than a stock shot, and a failed step stores its real reason on the show for the UI to display. A fallback that silently substitutes fake data is worse than a crash.
 
-- Node.js 24.11.0 (see `.nvmrc`)
-- `ffmpeg` on PATH (used to stitch clips: `brew install ffmpeg`)
-- A Google Cloud project with billing enabled, and the `gcloud` CLI
-  (`brew install --cask google-cloud-sdk`)
-- PostgreSQL 16 with the `pgvector` extension — provisioned on Cloud SQL by
-  `./scripts/provision-cloud-sql.sh`, or run locally for development
-- Google Gemini API Key (`GEMINI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY`)
-- Mux API credentials (`MUX_TOKEN_ID`, `MUX_TOKEN_SECRET`)
+---
 
-### 2. Installation & Setup
+## Run it yourself
+
+### Prerequisites
+
+- Node 24 (`.nvmrc` pins 24.11.0)
+- `ffmpeg` on PATH (`brew install ffmpeg`); a static build is bundled for serverless hosts
+- PostgreSQL 14 or newer. No extensions needed.
+- A GMI Cloud account with a funded API key. MiniMax-H3 is paid ($0.13 per request); M3, Speech 2.8 HD and Music 3.0 are free during MiniMax Week.
+- Mux credentials. The free plan caps stored assets at 10; the workflow preflights capacity and refuses to start when the library is full.
+
+### Environment
+
+`cp .env.example .env.local` and fill in the blanks. Every variable is validated at startup by `app/lib/env.ts`, which carries the exact description of each.
+
+| Variable                                         | Required           | Purpose                                                                               |
+| :----------------------------------------------- | :----------------- | :------------------------------------------------------------------------------------ |
+| `GMI_CLOUD_APIKEY`                               | yes                | One key for every MiniMax model call. Optional only when visitors bring their own.    |
+| `GMI_TEXT_MODEL`                                 | no                 | Text model id on GMI Cloud. Default `MiniMaxAI/MiniMax-M3`.                           |
+| `H3_RESOLUTION`                                  | no                 | `768P` (default) or `2K`.                                                             |
+| `H3_AUDIO_STRATEGY`                              | no                 | `reference` (default), `native` or `overlay`.                                         |
+| `H3_MAX_REQUESTS_PER_RUN`                        | no                 | Per-show cap on H3 requests. Default 14.                                              |
+| `H3_SESSION_CAP_USD`                             | no                 | All-time H3 spend cap for this database, in USD. Default 8.                           |
+| `DATABASE_URL`                                   | yes                | Postgres. Shows, transcripts, chat, memory and the spend ledger.                      |
+| `MUX_TOKEN_ID`, `MUX_TOKEN_SECRET`               | yes                | Direct upload and HLS playback.                                                       |
+| `MUX_ASSET_LIMIT`                                | no                 | Stored-asset cap for your Mux plan. Default 10, the free-plan cap.                    |
+| `REQUIRE_USER_API_KEYS`, `KEY_ENCRYPTION_SECRET` | public deployments | Visitors supply their own GMI Cloud key, encrypted at rest for the life of their run. |
+| `NEXT_PUBLIC_BASE_URL`                           | no                 | Base URL for public endpoints and workflow callbacks.                                 |
+| `ELEVENLABS_API_KEY`, `S3_*`                     | no                 | Legacy caption and audio translation of imported talks. Not on the show path.         |
+| `REMOTION_AWS_*`                                 | no                 | Legacy social clips. Not on the show path.                                            |
+
+### Commands
 
 ```bash
-# Clone the repository
-git clone https://github.com/arjunlohan/multimodal-frontier-hackathon-interdimensional-cable.git
-cd multimodal-frontier-hackathon-interdimensional-cable
-
-# Install dependencies
 npm install
-
-# Configure environment variables
-cp .env.example .env.local
-# Edit .env.local with your GEMINI_API_KEY, DATABASE_URL, and MUX credentials
+npm run db:migrate           # Drizzle migrations, including the MiniMax Week schema
+npm run seed-templates       # the show formats and their hosts
+npm run gmi:smoke            # prove access: M3 text + JSON, two Speech 2.8 voices, a Music 3.0 hook (all free)
+npm run gmi:smoke -- --video # plus two 4 s MiniMax-H3 clips ($0.26), with and without references
+npm run gmi:smoke -- --voices # plus one line in every catalog voice
+npm run dev                  # http://localhost:3000
+npm run agent:taskmaster     # the autonomous coordinator: Hacker News -> memory profile -> dispatch
+npm run import-mux-assets    # import existing Mux assets as browsable talks
+npm test                     # vitest
+npm run lint && npm run build
+npm run remotion:studio      # legacy social clips only
 ```
 
-### 3. Provision Google Cloud SQL
-
-The application's state layer runs on **Cloud SQL for PostgreSQL 16** with `pgvector`.
-
-```bash
-# One-time: authenticate (both are required — they are separate consent flows)
-gcloud auth login
-gcloud auth application-default login
-
-# Creates the instance and database, enables pgvector, starts the Auth Proxy
-./scripts/provision-cloud-sql.sh
-
-# Copies local data across, verifies nothing was lost, repoints DATABASE_URL
-./scripts/migrate-to-cloud-sql.sh
-```
-
-Both scripts are idempotent. The migration refuses to switch `DATABASE_URL`
-unless every row arrives intact.
-
-To develop against local Postgres instead, set `DATABASE_URL` to a local
-connection string and run the migrations below — the application code is
-identical either way.
-
-### 4. Database Migration & Template Seeding
-
-```bash
-# Run database migrations (creates pgvector tables, memory bank, and shows)
-npm run db:migrate
-
-# Seed show templates (John Oliver, Seth Meyers, SNL Weekend Update)
-npm run seed-templates
-```
-
-### 5. Launch the Application
-
-```bash
-# Start the development server
-npm run dev
-# Visit http://localhost:3000
-```
-
-### 6. Run the Autonomous Taskmaster Agent
-
-```bash
-# Triggers the autonomous news discovery, memory matching, and show generation agent
-npm run agent:taskmaster
-```
+The smoke script appends what the platform actually returned (timings, durations, whether a clip carried audio) to `DOCS/gmi-contracts.md`, so the audio strategy decision is recorded, not remembered. H3 spend is tracked in the `gmi_spend` table; `DOCS/spend-ledger.md` is the human-readable copy.
 
 ---
 
-## 🧪 Testing & Verification
+## 3-minute demo shot list
 
-13 suites, 320 tests, all passing. Coverage spans the durable show workflow, the four-tier memory bank, the video engine, multi-speaker TTS, the FFmpeg stitcher, and the skill/dramaturgy registries, including adversarial "challenger" suites that attack boundary conditions.
+Judges stop watching at 3:00. Recorded with a real voice, not a synthesized one.
 
-```bash
-# Run all tests
-npm run test
-```
+| Time            | Shot                                                                                                                                                                                                               | Notes                                                                                                                                                                          |
+| :-------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **0:00 - 0:15** | **Cold open. No talking.** The hero episode full screen with the synced transcript beside it. Twelve seconds of actual comedy, with sound.                                                                         | Speak only over the tail: "Nobody wrote that, voiced it, filmed it or scored it. Four MiniMax models did, through GMI Cloud."                                                  |
+| **0:15 - 0:30** | **The stack, in-product.** The homepage: the "Running on" strip, then scroll "What runs when you press generate": eight stages, each naming its model and its service.                                             | The architecture, explained without a slide. "Every one of those is a checkpointed step. Here it is actually running."                                                         |
+| **0:30 - 1:05** | **One workflow, live.** Paste a Hacker News link on `/create`, pick the video format, hit generate, cut to the engine chips advancing: research, script, voices, clips, score, assembly, publish.                  | Narrate the engineering: a refused clip gets a rewritten line and a retry, the preflight refuses to spend render money it cannot store, the spend guard refuses past the caps. |
+| **1:05 - 1:15** | **Honest cut.** On-screen text, and say it aloud: "A 90 second episode renders in minutes, not seconds. Here is the same pipeline's output from earlier."                                                          | Never fake a real-time render.                                                                                                                                                 |
+| **1:15 - 1:40** | **The theme and the credits.** The title card with its theme hook, then jump to the end card: the credits sing the episode's three best jokes. Show the lyrics on the watch page's provenance panel.               | The originality shot. Let the song play.                                                                                                                                       |
+| **1:40 - 2:05** | **In-character chat, one continuous take.** Pause mid-episode. Type a question. The host answers in character, in its own Speech 2.8 voice. Trigger a 30-second audio tangent.                                     | Video, voice, text and synced transcript on one surface. Costs no H3 credit, so rehearse it freely.                                                                            |
+| **2:05 - 2:25** | **Memory that adapts and forgets.** The memory card: concept mastery moving beginner to intermediate, with confidence values.                                                                                      | "Confidence decays on an Ebbinghaus schedule, so a concept you asked about in March stops steering the show by August. The next script is written against this profile."       |
+| **2:25 - 2:45** | **The Taskmaster.** Terminal: `npm run agent:taskmaster`. It pulls live Hacker News, M3 ranks the stories against the memory profile, prints its routing reasoning, and dispatches the workflow. Zero human input. | "Agents that direct."                                                                                                                                                          |
+| **2:45 - 3:00** | **Close** on the homepage's "Built for MiniMax Week" section: model usage, usability, originality, each mapped to what the product does. One sentence, then stop.                                                  | The last frame is the rubric judges score against.                                                                                                                             |
 
----
+**Overrun policy:** cut the memory card first, then the Taskmaster. Never cut the cold open, the live generation or the theme and credits.
 
-## 🎬 4-Minute Demo Script
-
-Judges stop watching at 4:00 exactly. Recorded with a real voice, not a synthesized one.
-
-| Time            | Shot                                                                                                                                                                                                          | Notes                                                                                                                                                                           |
-| :-------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **0:00 - 0:18** | **Cold open. No talking.** A finished episode full screen with the synced transcript scrolling beside it. 15 seconds of actual comedy, with sound.                                                            | Speak only over the tail: "Nobody wrote that. Nobody filmed it. An agent produced it end to end from a link."                                                                   |
-| **0:18 - 0:32** | Problem and value proposition, over the still-playing episode.                                                                                                                                                | Static media is recorded once for a generic audience and cannot be steered. Three sentences.                                                                                    |
-| **0:32 - 0:50** | **The stack, in-product.** The homepage: the "Running on" strip, then scroll "What runs when you press generate" — seven stages, each naming its model and its service, with Cloud SQL spanning all of them.  | The architecture, explained without a slide. "Every one of those is a checkpointed step. Here it is actually running."                                                          |
-| **0:50 - 1:30** | **One workflow, live.** Paste a Hacker News link on `/create`, hit generate, cut to the durable steps executing: research → script → clips → stitch → upload.                                                 | Narrate the engineering: a blocked safety filter triggers a rewrite-and-retry rather than a failed run, and a capacity preflight refuses to spend render money it cannot store. |
-| **1:30 - 1:42** | **Honest cut.** On-screen text, and say it aloud: "Video generation takes about six minutes. Here is the same pipeline's output from earlier."                                                                | Never fake a real-time render.                                                                                                                                                  |
-| **1:42 - 2:30** | **Multimodal, one continuous take.** Pause mid-episode. Type a question. The host answers in character, in its own synthesized voice, grounded live by Google Search. Then trigger a 30-second audio tangent. | Video, multi-speaker neural voice, grounded text and synced transcript on one surface. Costs TTS tokens, not render money, so rehearse it freely.                               |
-| **2:30 - 3:00** | **Memory that adapts _and forgets_.** The memory card: concept mastery moving beginner → intermediate, with confidence values.                                                                                | "Confidence decays on an Ebbinghaus schedule, so a concept you asked about in March stops steering the show by August. The next script is written against this profile."        |
-| **3:00 - 3:20** | **Autonomy.** Terminal: `npm run agent:taskmaster`. It pulls live Hacker News, ranks stories against the memory profile, prints its routing reasoning, and dispatches the workflow. Zero human input.         | "Takes action, not text."                                                                                                                                                       |
-| **3:20 - 3:50** | **Google Cloud proof — mandatory.** Cloud SQL instance `ic-pg`, then **Query Insights** showing the queries from the run you just did landing live.                                                           | This is the shot the rules require. Query Insights is the strong one: it shows the app hitting Google Cloud in real time, not a static console page.                            |
-| **3:50 - 4:00** | **Close** on the homepage's "Built on Google Cloud" section — each requirement mapped to the file that satisfies it. One sentence, then stop.                                                                 | The last frame is the checklist judges score against.                                                                                                                           |
-
-**Overrun policy:** cut 0:18-0:32 first, then the close. Never cut the multimodal take or the Google Cloud proof.
-
-**Before recording:** free at least two Mux slots (the free plan caps at 10 and the preflight hard-blocks generation when full), and watch the console for `[pass1-research] falling back to mock` during the take — that path fabricates sources and would hollow out the grounding claim on camera.
+**Before recording:** free at least two Mux slots (the preflight hard-blocks generation when the plan is full), run `npm run gmi:smoke` so a platform outage does not surface on camera, and check `gmi_spend` against `H3_SESSION_CAP_USD` so the live run is not refused by your own guard.
 
 ---
 
-## 🗺️ Repository Map
+## Provenance
 
-| Path                                | What lives here                                                                                                                                                        |
-| :---------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `workflows/generate-show.ts`        | The durable production pipeline. Nine checkpointed `"use step"` boundaries: research → script → voice → clips → stitch → upload.                                       |
-| `app/lib/dramaturgy/`               | The three-pass writers' room. `pass1-research` (grounded research), `pass2-head-writer` (structure and jokes), `pass3-voice-prune` (persona voice + trim to duration). |
-| `app/lib/memory-bank.ts`            | Four-tier cognitive memory: working, episodic, procedural, semantic. Includes Ebbinghaus confidence decay and reinforcement.                                           |
-| `app/lib/vertex-video.ts`           | Veo 3.1 over Vertex REST `predictLongRunning`. The active video path.                                                                                                  |
-| `app/lib/veo.ts`                    | The Gemini Developer API video path (`gemini-omni-1.1-flash`), plus rate limiting, RAI handling, and frame chaining. Inactive by default.                              |
-| `app/lib/genai.ts`                  | Single shared GenAI client factory. Routes express (`AQ.*`) keys to Vertex.                                                                                            |
-| `app/lib/tts.ts`                    | Multi-speaker synthesis with host gender/accent inference driven by the show template.                                                                                 |
-| `app/lib/stitch.ts`                 | FFmpeg concat-demuxer stitching with an AAC re-encode fallback.                                                                                                        |
-| `scripts/autonomous-trend-agent.ts` | The Taskmaster coordinator: discover → rank against memory → route → provision → dispatch.                                                                             |
-| `db/schema.ts`                      | State model. pgvector `vector(768)` with an HNSW cosine index.                                                                                                         |
-| `app/watch/[showId]/`               | Player, synced transcript, in-character Q&A, audio tangents, memory profile card.                                                                                      |
+This architecture was started on 2026-08-29 for another event, on Google's stack (Gemini for text and speech, Veo for video, Google embeddings on Cloud SQL): [arjunlohan/multimodal-frontier-hackathon-interdimensional-cable](https://github.com/arjunlohan/multimodal-frontier-hackathon-interdimensional-cable). During MiniMax Week it was rebuilt on MiniMax models end to end: every model call now goes through `app/lib/gmi/`, the Google SDK is out of the dependency tree, and the embeddings were replaced by Postgres full-text search. The 60 to 120 second video episodes, the theme music, the sung credits and the reference-audio performances are new to this week. The writers' room structure, the memory bank, the in-character chat and the Taskmaster coordinator carried over and were re-pointed at MiniMax-M3.
 
 ---
 
-## 🔬 Engineering Insights
-
-Three things that cost real time and are not in any documentation:
-
-**1. `AQ.*` and `AIza` keys are different auth surfaces, and the prefix does not tell you which.**
-Express-mode keys exist on _both_ the Gemini Developer API and Vertex, but they are not interchangeable. A client built without `vertexai: true` returns `403 PERMISSION_DENIED` against a Vertex express key. This is centralized in `app/lib/genai.ts` so it can only be got wrong once.
-
-**2. Express keys cannot address long-running video operations through the SDK.**
-`generateVideos` needs an explicit `projects/{p}/locations/{l}` path, which the express-key initializer rejects (`project`/`location` are mutually exclusive with `apiKey`). The workaround is a hand-rolled REST client that calls `predictLongRunning` and polls `fetchPredictOperation` directly — `app/lib/vertex-video.ts`.
-
-**3. Google Search grounding is incompatible with `responseMimeType: "application/json"`.**
-You must choose grounded-and-unstructured or structured-and-ungrounded. Worse, the failure is silent: an 8192-token cap truncated the grounded research brief mid-object, JSON parsing failed, and the pipeline fell back to mock research that fabricated `example.com` sources while reporting success. Fixed by raising the cap to 32768 and parsing defensively. **The lesson generalizes: a fallback that silently substitutes fake data is worse than a crash.**
-
-We also hand-rolled the memory tier on Postgres/pgvector rather than using Vertex AI Agent Engine Memory Bank, because retrieval needed to happen in the same transaction as show metadata.
-
----
-
-## ⚠️ Known Limitations
+## Known limitations
 
 Stated up front rather than left to be discovered:
 
-- **Single-tenant.** `"default_user"` is hardcoded. There is no auth; every session shares one memory profile.
-- **Workflow run store.** Off Vercel, the Workflow DevKit persists runs to the local filesystem. A production deployment would move the step queue to Cloud Tasks or Pub/Sub.
-- **`vertex-video.ts` has no unit coverage.** It is exercised manually via `npm run test:veo`, which costs real money, so it is not in CI.
-- **Mux free tier caps at 10 assets.** The workflow runs a capacity preflight and refuses to start rather than spend render money it cannot store, but you must delete assets to keep generating.
-- **`gemini-omni-1.1-flash` is implemented but inactive.** It requires AI Studio prepay credits on the key's project; ours has none, so video runs on Veo 3.1 via Vertex instead. Both paths are in the repo.
-- **Retry is automatic, not manual.** Steps are checkpointed and resume on retry, but there is no user-facing "resume this run" control yet.
+- **Single tenant.** `"default_user"` is hardcoded. There is no auth; every session shares one memory profile.
+- **Mux free plan caps at 10 assets.** The workflow runs a capacity preflight and refuses to start rather than spend render money it cannot store, but you must delete shows to keep generating.
+- **MiniMax-H3 is paid and rate limited.** $0.13 per request, and GMI Cloud rate-limits H3 per hour; the client backs off on 429 and the spend guard refuses past the caps. A 90 second episode is roughly 8 to 12 requests. Clips render sequentially, so an episode takes minutes.
+- **Workflow run store.** Off Vercel, the Workflow DevKit persists runs to the local filesystem. Deploy to Vercel for a durable queue.
+- **Voice cloning is wired but off.** `cloneVoiceAndSpeak` exists; no show format uses it yet.
+- **The imported-talk features are legacy.** Caption translation, dubbing and social clips (`/media/[slug]`) need ElevenLabs, S3 and Remotion credentials and are not on the show path.
 
 ---
 
-## 🏅 Bonus Integrations
+## License
 
-- **Veo** — `veo-3.1-generate-001` generates every video clip, through Vertex AI (`app/lib/vertex-video.ts`).
-
----
-
-## 📜 License
-
-MIT License. Built for the **All Things Agentic Hackathon 2026**.
+MIT. See `LICENSE`.

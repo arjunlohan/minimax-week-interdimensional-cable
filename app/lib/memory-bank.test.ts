@@ -19,6 +19,7 @@ import {
   getUserMemories,
   getUserTangents,
   getWorkingMemory,
+  MemoryExtractionSchema,
   updateMemoryFromInteraction,
 } from "./memory-bank";
 
@@ -26,41 +27,42 @@ import {
 // Mocks
 // ─────────────────────────────────────────────────────────────────────────────
 
-const { mockGenerateContent, mockSearchVideoChunks } = vi.hoisted(() => ({
-  mockGenerateContent: vi.fn(),
+const { mockGenerateJson, mockGenerateText, mockSearchVideoChunks } = vi.hoisted(() => ({
+  mockGenerateJson: vi.fn(),
+  mockGenerateText: vi.fn(),
   mockSearchVideoChunks: vi.fn(),
 }));
 
 vi.mock("@/app/lib/env", () => ({
   env: {
-    GEMINI_API_KEY: "test-gemini-key",
-    GOOGLE_GENERATIVE_AI_API_KEY: "test-google-key",
+    GMI_CLOUD_APIKEY: "test-gmi-key",
     DATABASE_URL: "postgresql://localhost:5432/test",
   },
 }));
 
 vi.mock("./env", () => ({
   env: {
-    GEMINI_API_KEY: "test-gemini-key",
-    GOOGLE_GENERATIVE_AI_API_KEY: "test-google-key",
+    GMI_CLOUD_APIKEY: "test-gmi-key",
     DATABASE_URL: "postgresql://localhost:5432/test",
   },
 }));
 
-vi.mock("@google/genai", () => {
-  class MockGoogleGenAI {
-    models = {
-      generateContent: mockGenerateContent,
-    };
-  }
-  return {
-    GoogleGenAI: MockGoogleGenAI,
-  };
-});
+// The model boundary. generateJson's contract is "the reply, parsed and
+// validated by the caller's schema", so the mock runs the schema the module
+// hands it over a raw reply object, exactly as the real function would after
+// extracting the JSON.
+vi.mock("@/app/lib/gmi/text", () => ({
+  generateJson: mockGenerateJson,
+  generateText: mockGenerateText,
+}));
 
 vi.mock("@/db/search", () => ({
   searchVideoChunks: mockSearchVideoChunks,
 }));
+
+function queueModelReply(reply: unknown) {
+  mockGenerateJson.mockImplementationOnce(async ({ schema: replySchema }: { schema: { parse: (v: unknown) => unknown } }) => replySchema.parse(reply));
+}
 
 // In-memory test state for DB tables
 let mockDbMemories: any[] = [];
@@ -150,7 +152,8 @@ vi.mock("drizzle-orm/node-postgres", () => ({
 
 describe("persistent cognitive memory bank", () => {
   beforeEach(() => {
-    mockGenerateContent.mockReset();
+    mockGenerateJson.mockReset();
+    mockGenerateText.mockReset();
     mockSearchVideoChunks.mockReset();
     mockDbMemories = [];
     mockDbChatMessages = [];
@@ -197,7 +200,7 @@ describe("persistent cognitive memory bank", () => {
           userId: "user-123",
           memoryType: "question_pattern",
           key: "q1",
-          value: "How does Veo 3.1 maintain temporal consistency?",
+          value: "How does MiniMax-H3 keep a host's face consistent across clips?",
           confidence: 1.0,
           updatedAt: new Date(),
         },
@@ -212,7 +215,7 @@ describe("persistent cognitive memory bank", () => {
       expect(summary.conceptMastery[0].concept).toBe("quantum-computing");
       expect(summary.conceptMastery[0].level).toBe("Expert level");
       expect(summary.conceptMastery[0].confidence).toBe(0.9);
-      expect(summary.recentQuestions).toEqual(["How does Veo 3.1 maintain temporal consistency?"]);
+      expect(summary.recentQuestions).toEqual(["How does MiniMax-H3 keep a host's face consistent across clips?"]);
     });
 
     it("handles empty memory bank gracefully and returns fallback defaults", async () => {
@@ -232,15 +235,15 @@ describe("persistent cognitive memory bank", () => {
         { memoryType: "interest_topic", key: "ai-agents", value: "tag1", updatedAt: new Date() },
         { memoryType: "interest_topic", key: "ai-agents", value: "duplicate tag", updatedAt: new Date() },
         { memoryType: "interest_topic", key: "robotics", value: "tag2", updatedAt: new Date() },
-        { memoryType: "question_pattern", key: "q1", value: "What is Veo?", updatedAt: new Date() },
-        { memoryType: "question_pattern", key: "q2", value: "What is Veo?", updatedAt: new Date() },
-        { memoryType: "question_pattern", key: "q3", value: "How fast is Gemini?", updatedAt: new Date() },
+        { memoryType: "question_pattern", key: "q1", value: "What is MiniMax-H3?", updatedAt: new Date() },
+        { memoryType: "question_pattern", key: "q2", value: "What is MiniMax-H3?", updatedAt: new Date() },
+        { memoryType: "question_pattern", key: "q3", value: "How fast is MiniMax-M3?", updatedAt: new Date() },
       ];
 
       const summary = await getMemorySummary("user-dups");
 
       expect(summary.interests).toEqual(["ai-agents", "robotics"]);
-      expect(summary.recentQuestions).toEqual(["What is Veo?", "How fast is Gemini?"]);
+      expect(summary.recentQuestions).toEqual(["What is MiniMax-H3?", "How fast is MiniMax-M3?"]);
     });
 
     it("caps summary arrays to prevent prompt bloat (max 10 concepts, 10 interests, 5 questions)", async () => {
@@ -444,35 +447,44 @@ describe("persistent cognitive memory bank", () => {
   });
 
   // ───────────────────────────────────────────────────────────────────────────
-  // Suite 4: Autonomous Memory Extractor (Gemini 3.7 Flash JSON Mode)
+  // Suite 4: Autonomous Memory Extractor (MiniMax-M3 structured output)
   // ───────────────────────────────────────────────────────────────────────────
-  describe("suite 4: autonomous memory extractor (gemini 3.7 flash json mode)", () => {
-    it("parses Gemini Flash JSON response and inserts new memories into database", async () => {
-      mockGenerateContent.mockResolvedValueOnce({
-        candidates: [
+  describe("suite 4: autonomous memory extractor (minimax-m3 structured output)", () => {
+    it("hands generateJson the extraction schema, a label, and the full interaction", async () => {
+      queueModelReply({ memories: [] });
+
+      await updateMemoryFromInteraction(
+        "user-call",
+        "Why do coral reefs bleach?",
+        "Heat stress evicts the algae that feed them.",
+        "Ocean Science",
+        "show-uuid-0",
+      );
+
+      expect(mockGenerateJson).toHaveBeenCalledTimes(1);
+      const call = mockGenerateJson.mock.calls[0][0];
+      expect(call.schema).toBe(MemoryExtractionSchema);
+      expect(call.label).toBe("memory-extraction");
+      expect(call.prompt).toContain("TOPIC: Ocean Science");
+      expect(call.prompt).toContain("USER MESSAGE: Why do coral reefs bleach?");
+      expect(call.prompt).toContain("ASSISTANT RESPONSE: Heat stress evicts the algae that feed them.");
+      expect(mockInsertCalls.length).toBe(0);
+    });
+
+    it("parses the MiniMax-M3 extraction envelope and inserts new memories into database", async () => {
+      queueModelReply({
+        memories: [
           {
-            content: {
-              parts: [
-                {
-                  text: JSON.stringify({
-                    memories: [
-                      {
-                        memoryType: "concept_mastery",
-                        key: "transformers-architecture",
-                        value: "Expert level",
-                        confidence: 0.9,
-                      },
-                      {
-                        memoryType: "interest_topic",
-                        key: "gpu-clusters",
-                        value: "high performance computing",
-                        confidence: 0.85,
-                      },
-                    ],
-                  }),
-                },
-              ],
-            },
+            memoryType: "concept_mastery",
+            key: "transformers-architecture",
+            value: "Expert level",
+            confidence: 0.9,
+          },
+          {
+            memoryType: "interest_topic",
+            key: "gpu-clusters",
+            value: "high performance computing",
+            confidence: 0.85,
           },
         ],
       });
@@ -506,25 +518,13 @@ describe("persistent cognitive memory bank", () => {
         },
       ];
 
-      mockGenerateContent.mockResolvedValueOnce({
-        candidates: [
+      queueModelReply({
+        memories: [
           {
-            content: {
-              parts: [
-                {
-                  text: JSON.stringify({
-                    memories: [
-                      {
-                        memoryType: "concept_mastery",
-                        key: "quantum-teleportation",
-                        value: "Expert level understanding",
-                        confidence: 0.85,
-                      },
-                    ],
-                  }),
-                },
-              ],
-            },
+            memoryType: "concept_mastery",
+            key: "quantum-teleportation",
+            value: "Expert level understanding",
+            confidence: 0.85,
           },
         ],
       });
@@ -543,46 +543,10 @@ describe("persistent cognitive memory bank", () => {
       expect(mockUpdateCalls[0].confidence).toBe(0.72);
     });
 
-    it("strips markdown code fences from JSON output before parsing", async () => {
-      mockGenerateContent.mockResolvedValueOnce({
-        candidates: [
-          {
-            content: {
-              parts: [
-                {
-                  text: "```json\n{\n  \"memories\": [\n    {\n      \"memoryType\": \"humor_preference\",\n      \"key\": \"tone\",\n      \"value\": \"Sarcastic news banter\",\n      \"confidence\": 0.95\n    }\n  ]\n}\n```",
-                },
-              ],
-            },
-          },
-        ],
-      });
-
-      await updateMemoryFromInteraction(
-        "user-fences",
-        "I love cynical late night news jokes!",
-        "Then you came to the right show.",
-        "Comedy",
+    it("gracefully handles a reply that never became valid JSON without throwing unhandled exceptions", async () => {
+      mockGenerateJson.mockRejectedValueOnce(
+        new Error("memory-extraction: MiniMax-M3 did not return valid JSON after 2 attempts: No JSON object or array found in the model reply"),
       );
-
-      expect(mockInsertCalls.length).toBe(1);
-      expect(mockInsertCalls[0].value).toBe("Sarcastic news banter");
-    });
-
-    it("gracefully handles malformed or non-JSON model output without throwing unhandled exceptions", async () => {
-      mockGenerateContent.mockResolvedValueOnce({
-        candidates: [
-          {
-            content: {
-              parts: [
-                {
-                  text: "Sorry, I cannot produce JSON right now due to safety filters.",
-                },
-              ],
-            },
-          },
-        ],
-      });
 
       await expect(
         updateMemoryFromInteraction("user-err", "test", "test", "topic"),
@@ -592,24 +556,12 @@ describe("persistent cognitive memory bank", () => {
     });
 
     it("ignores empty or invalid memory objects lacking required fields", async () => {
-      mockGenerateContent.mockResolvedValueOnce({
-        candidates: [
-          {
-            content: {
-              parts: [
-                {
-                  text: JSON.stringify({
-                    memories: [
-                      { key: "", value: "val", memoryType: "interest_topic" },
-                      { key: "valid-key", value: "", memoryType: "interest_topic" },
-                      { key: "valid-key-2", value: "valid-val" }, // missing memoryType
-                      { key: "valid-key-3", value: "valid-val-3", memoryType: "interest_topic" },
-                    ],
-                  }),
-                },
-              ],
-            },
-          },
+      queueModelReply({
+        memories: [
+          { key: "", value: "val", memoryType: "interest_topic" },
+          { key: "valid-key", value: "", memoryType: "interest_topic" },
+          { key: "valid-key-2", value: "valid-val" }, // missing memoryType
+          { key: "valid-key-3", value: "valid-val-3", memoryType: "interest_topic" },
         ],
       });
 
@@ -617,6 +569,25 @@ describe("persistent cognitive memory bank", () => {
 
       expect(mockInsertCalls.length).toBe(1);
       expect(mockInsertCalls[0].key).toBe("valid-key-3");
+    });
+
+    it("keeps a memory whose confidence is out of range and falls back to the default confidence", async () => {
+      queueModelReply({
+        memories: [
+          { key: "orbital-mechanics", value: "Familiar", memoryType: "concept_mastery", confidence: 1.7 },
+        ],
+      });
+
+      await updateMemoryFromInteraction("user-conf", "query", "reply", "topic");
+
+      expect(mockInsertCalls.length).toBe(1);
+      expect(mockInsertCalls[0].key).toBe("orbital-mechanics");
+      expect(mockInsertCalls[0].confidence).toBe(1.0);
+    });
+
+    it("treats a missing or null memories array as nothing learned", () => {
+      expect(MemoryExtractionSchema.parse({}).memories).toEqual([]);
+      expect(MemoryExtractionSchema.parse({ memories: null }).memories).toEqual([]);
     });
   });
 
@@ -637,7 +608,7 @@ describe("persistent cognitive memory bank", () => {
       expect(showTangents).toHaveLength(2);
     });
 
-    it("retrieves and maps semantic memory video chunks", async () => {
+    it("retrieves and maps full-text search hits into semantic memory items", async () => {
       mockSearchVideoChunks.mockResolvedValueOnce([
         {
           chunk_id: "chunk-1",
@@ -652,6 +623,7 @@ describe("persistent cognitive memory bank", () => {
 
       const results = await getSemanticMemory("quantum computing", 3);
 
+      expect(mockSearchVideoChunks).toHaveBeenCalledWith("quantum computing", 3);
       expect(results).toHaveLength(1);
       expect(results[0].chunkId).toBe("chunk-1");
       expect(results[0].similarityScore).toBe(0.89);

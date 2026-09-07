@@ -43,7 +43,7 @@ export const varietyMonologueSkill: ShowSkill = {
       "Check this out...",
       "And then they said...",
     ],
-    ttsVoice: "Aoede",
+    ttsVoice: "English_Upbeat_Woman",
     acousticCuePreferences: ["[laughs]", "[chuckles]", "[excitedly]"],
   },
   hosts: [
@@ -51,7 +51,7 @@ export const varietyMonologueSkill: ShowSkill = {
       name: "Jimmy Fallout",
       role: "anchor",
       position: "center",
-      ttsVoice: "Aoede",
+      ttsVoice: "English_Upbeat_Woman",
       personaCraft:
         "High-energy, joyous, enthusiastic late-night variety host. Delivers playful, accessible topical jokes with constant laughter breaks, enthusiastic hand gestures, and charming eagerness to entertain.",
       personality:

@@ -1,11 +1,10 @@
-import { ThinkingLevel } from "@google/genai";
+import { z } from "zod";
 
+import { generateJson } from "@/app/lib/gmi/text";
 import { calculateClipWordBudgets } from "@/app/lib/skills/archetype-a";
+import type { ClipWordBudget, RhetoricalAct, ShowSkill } from "@/app/lib/skills/types";
 
-import { resolveVertexKey } from "../api-keys";
-import { buildGenAIClient } from "../genai";
-
-import { HeadWriterDraftSchema } from "./schemas";
+import { ComedicBeatSchema, HeadWriterDraftModelOutputSchema, HeadWriterDraftSchema } from "./schemas";
 import type {
   CallbackLink,
   ComedicBeat,
@@ -13,21 +12,90 @@ import type {
   HeadWriterDraft,
   Pass2Input,
   PodcastTurn,
+  ShowOutputFormat,
   TurnType,
 } from "./types";
 
-import type { GoogleGenAI } from "@google/genai";
-
-function getClient(): GoogleGenAI | null {
-  const apiKey = resolveVertexKey();
-  if (!apiKey) {
-    return null;
-  }
-  return buildGenAIClient(apiKey);
-}
-
 function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Beat planning
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Audio episodes keep the fixed grid the desk path has always been cut on. */
+export const AUDIO_BEAT_SECONDS = 8;
+/** Video beats aim for this length; MiniMax-H3 renders one clip per beat. */
+export const VIDEO_BEAT_TARGET_SECONDS = 10;
+export const VIDEO_BEAT_MIN_SECONDS = 8;
+export const VIDEO_BEAT_MAX_SECONDS = 12;
+/** Measured spoken delivery rate; the head writer's hard total word budget is derived from it. */
+export const SPOKEN_WORDS_PER_SECOND = 2.46;
+
+/**
+ * Slices a video episode into integer beat lengths that sum to the duration.
+ * The count is the duration over ten seconds, so every slot lands between 8
+ * and 12 s for any total of 16 s or more; below that the single slot (or the
+ * 8 + 7 split at 15 s) stays inside MiniMax-H3's 4 to 15 s clip range.
+ */
+export function planVideoBeatSlots(durationSeconds: number): number[] {
+  const total = Math.max(1, Math.round(durationSeconds));
+  const count = Math.max(1, Math.round(total / VIDEO_BEAT_TARGET_SECONDS));
+  const base = Math.floor(total / count);
+  const remainder = total - base * count;
+  return Array.from({ length: count }, (_, index) => base + (index < remainder ? 1 : 0));
+}
+
+function actAtProgress(acts: RhetoricalAct[], progressFraction: number): RhetoricalAct | undefined {
+  let cumulativeFraction = 0;
+  for (const act of acts) {
+    cumulativeFraction += act.targetDurationFraction;
+    if (progressFraction <= cumulativeFraction) {
+      return act;
+    }
+  }
+  return acts[acts.length - 1];
+}
+
+/**
+ * Per-beat word budgets for a desk show. Video beats come from
+ * `planVideoBeatSlots`; audio keeps `calculateClipWordBudgets`' 8 s grid. Acts
+ * and the word band follow the same rules as that helper so the two formats
+ * differ only in slot length.
+ */
+export function planClipWordBudgets(
+  durationSeconds: number,
+  skill: ShowSkill,
+  format: ShowOutputFormat = "video",
+): ClipWordBudget[] {
+  if (format === "audio") {
+    return calculateClipWordBudgets(durationSeconds, skill, AUDIO_BEAT_SECONDS);
+  }
+
+  const slots = planVideoBeatSlots(durationSeconds);
+  const total = slots.reduce((sum, slot) => sum + slot, 0);
+  const wordsPerSecond = skill.rhetoricalSpine.wordBudgetPerSecond || 2.5;
+  const acts = skill.rhetoricalSpine.acts;
+
+  let startTime = 0;
+  return slots.map((duration, index) => {
+    const endTime = startTime + duration;
+    const act = actAtProgress(acts, (startTime + duration / 2) / total);
+    const targetWords = duration * wordsPerSecond;
+    const budget: ClipWordBudget = {
+      clipIndex: index,
+      startTimeSeconds: startTime,
+      endTimeSeconds: endTime,
+      durationSeconds: duration,
+      targetWordsMin: Math.max(10, Math.floor(targetWords * 0.92)),
+      targetWordsMax: Math.ceil(targetWords * 1.04),
+      assignedActId: act?.id ?? "act_1_thesis_hook",
+      actName: act?.name ?? "Act 1",
+    };
+    startTime = endTime;
+    return budget;
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,7 +105,7 @@ function countWords(text: string): number {
 const DESK_SHOW_SYSTEM_INSTRUCTION = `You are an elite Head Writer in a late-night comedy television writers' room (in the caliber of Last Week Tonight, A Closer Look, The Daily Show, and Weekend Update).
 
 YOUR OBJECTIVES:
-Construct an airtight, joke-dense 3-Act desk show script tailored for 8-second video clip generation.
+Construct an airtight, joke-dense 3-Act desk show script delivered as consecutive timed beats.
 
 CORE COMEDIC CRAFT RULES:
 1. INCONGRUITY-RESOLUTION: Every joke must establish a normal, journalistic expectation (Schema 1) and resolve it with a surprising, logically sound absurdity (Schema 2).
@@ -46,29 +114,25 @@ CORE COMEDIC CRAFT RULES:
 4. ESCALATING ANALOGIES: Deploy hyper-specific, unexpected similes ("X is like Y, if Y were run by Z").
 5. TAGS: After major laughs, immediately tack on 1-2 rapid 3-8 word punchline tags to elevate the laugh momentum.
 6. CALLBACK: Plant an absurd, memorable noun/persona in Act 1/2 (e.g., "Kevin, the unlicensed taxidermist"), and deliver a triumphant comedic callback payoff in Act 3.
-7. 8-SECOND CLIP GRANULARITY: Video shows are segmented into exact 8-second clips. Each clip MUST adhere to the target word budget (17-23 words per 8s clip at ~2.5 words/second).
-8. DUAL-TRACK OUTPUT: For every clip, generate both the spoken dialogue AND a vivid visual prompt for Google Veo 3.1 video conditioning.
+7. BEAT GRANULARITY: The prompt supplies the exact beat slots (start, end, duration, act) and a word budget for each. Every beat is ONE continuous spoken line by ONE host: no speaker change inside a beat, no stage directions in the dialogue. Land inside each beat's word budget; the hard total word budget matters most.
+8. DUAL-TRACK OUTPUT: For every beat, generate both the spoken dialogue AND a vivid visual prompt for MiniMax-H3 video conditioning.
 
 OUTPUT FORMAT:
 Output ONLY valid JSON matching this schema:
 {
-  "archetype": "writers_room_desk",
-  "showId": string,
   "showTitle": string,
-  "topic": string,
-  "selectedPremise": object,
   "beats": [
     {
       "id": "beat-0",
-      "actId": "act_1_thesis_hook",
-      "actName": "Act 1: Thesis & Grounded Incongruity Hook",
+      "actId": string (copied from the slot),
+      "actName": string (copied from the slot),
       "clipIndex": 0,
-      "startTimeSeconds": 0,
-      "endTimeSeconds": 8,
-      "durationSeconds": 8,
-      "targetWordCount": 20,
+      "startTimeSeconds": number (copied from the slot),
+      "endTimeSeconds": number (copied from the slot),
+      "durationSeconds": number (copied from the slot),
+      "targetWordCount": number (copied from the slot),
       "actualWordCount": number,
-      "speaker": string,
+      "speaker": string (exactly one of the listed hosts),
       "setup": string,
       "punchline": string,
       "tags": [string],
@@ -126,18 +190,14 @@ CORE CONVERSATIONAL CRAFT RULES:
 OUTPUT FORMAT:
 Output ONLY valid JSON matching this schema:
 {
-  "archetype": "conversational_podcast",
-  "showId": string,
   "showTitle": string,
-  "topic": string,
-  "selectedPremise": object,
   "turns": [
     {
       "id": "turn-0",
       "turnIndex": 0,
-      "speaker": string,
-      "role": "lead_host" | "co_host_sounding_board" | "guest",
-      "ttsVoice": "Charon" | "Fenrir" | "Puck" | "Aoede",
+      "speaker": string (exactly one of the listed hosts),
+      "role": string (the host's role as listed),
+      "ttsVoice": string (the host's voice id exactly as listed),
       "turnType": "inquiry" | "speculative_riff" | "diatribe" | "ping_pong" | "backchannel" | "tangent_pivot" | "snapback",
       "text": string (with acoustic tags like [laughs]),
       "acousticTags": [string],
@@ -172,7 +232,7 @@ Output ONLY valid JSON matching this schema:
 
 export function synthesizeDeterministicDeskDraft(input: Pass2Input): HeadWriterDraft {
   const { researchBrief, skill, durationSeconds } = input;
-  const clipBudgets = calculateClipWordBudgets(durationSeconds, skill, 8);
+  const clipBudgets = planClipWordBudgets(durationSeconds, skill, input.format ?? "video");
   const primaryHost = skill.hosts[0] ?? { name: "John", role: "anchor" };
   const topic = researchBrief.topic;
   const angle = researchBrief.selectedAngle;
@@ -302,7 +362,7 @@ export function synthesizeDeterministicDeskDraft(input: Pass2Input): HeadWriterD
 
 export function synthesizeDeterministicPodcastDraft(input: Pass2Input): HeadWriterDraft {
   const { researchBrief, skill, durationSeconds } = input;
-  const leadHost = skill.hosts.find(h => h.role === "lead_host" || h.role === "anchor") ?? skill.hosts[0] ?? { name: "Joe", role: "lead_host", ttsVoice: "Charon" };
+  const leadHost = skill.hosts.find(h => h.role === "lead_host" || h.role === "anchor") ?? skill.hosts[0] ?? { name: "Joe", role: "lead_host", ttsVoice: "English_magnetic_voiced_man" };
   // A solo format has no second seat. Falling back to an invented "Jamie" gave
   // single-host shows a phantom co-host, so the lead simply takes every turn.
   const coHost = skill.hosts.find(h => h !== leadHost) ?? leadHost;
@@ -325,7 +385,7 @@ export function synthesizeDeterministicPodcastDraft(input: Pass2Input): HeadWrit
     {
       speaker: leadHost.name,
       role: leadHost.role,
-      voice: leadHost.ttsVoice ?? "Charon",
+      voice: leadHost.ttsVoice ?? "English_magnetic_voiced_man",
       turnType: "inquiry",
       text: `[laughs] Have you actually looked at what is happening with ${topic} recently? It is completely off the rails.`,
       tags: ["[laughs]"],
@@ -335,7 +395,7 @@ export function synthesizeDeterministicPodcastDraft(input: Pass2Input): HeadWrit
     {
       speaker: coHost.name,
       role: coHost.role,
-      voice: coHost.ttsVoice ?? "Puck",
+      voice: coHost.ttsVoice ?? "English_Trustworth_Man",
       turnType: "speculative_riff",
       text: `[chuckles] 100 percent. The official reports say they spent millions on automated apologies. It is like discovering ancient primate rituals were secretly sponsored by venture capital.`,
       tags: ["[chuckles]"],
@@ -345,7 +405,7 @@ export function synthesizeDeterministicPodcastDraft(input: Pass2Input): HeadWrit
     {
       speaker: leadHost.name,
       role: leadHost.role,
-      voice: leadHost.ttsVoice ?? "Charon",
+      voice: leadHost.ttsVoice ?? "English_magnetic_voiced_man",
       turnType: "backchannel",
       text: `[incredulous] Wait, really? That's insane. Chimps would never agree to that terms of service agreement.`,
       tags: ["[incredulous]"],
@@ -355,7 +415,7 @@ export function synthesizeDeterministicPodcastDraft(input: Pass2Input): HeadWrit
     {
       speaker: coHost.name,
       role: coHost.role,
-      voice: coHost.ttsVoice ?? "Puck",
+      voice: coHost.ttsVoice ?? "English_Trustworth_Man",
       turnType: "diatribe",
       text: `Exactly! Chimps have basic dignity. Humans just scroll down 84 pages of legal jargon and click 'Agree', giving away their soul for a faster toaster.`,
       tags: [],
@@ -365,7 +425,7 @@ export function synthesizeDeterministicPodcastDraft(input: Pass2Input): HeadWrit
     {
       speaker: leadHost.name,
       role: leadHost.role,
-      voice: leadHost.ttsVoice ?? "Charon",
+      voice: leadHost.ttsVoice ?? "English_magnetic_voiced_man",
       turnType: "snapback",
       text: `[sighs] ${snapbackPhrase} The real wild part is the 1987 patent origin.`,
       tags: ["[sighs]"],
@@ -376,7 +436,7 @@ export function synthesizeDeterministicPodcastDraft(input: Pass2Input): HeadWrit
     {
       speaker: coHost.name,
       role: coHost.role,
-      voice: coHost.ttsVoice ?? "Puck",
+      voice: coHost.ttsVoice ?? "English_Trustworth_Man",
       turnType: "ping_pong",
       text: `The taxidermist in New Jersey! You can't make this stuff up.`,
       tags: [],
@@ -386,7 +446,7 @@ export function synthesizeDeterministicPodcastDraft(input: Pass2Input): HeadWrit
     {
       speaker: leadHost.name,
       role: leadHost.role,
-      voice: leadHost.ttsVoice ?? "Charon",
+      voice: leadHost.ttsVoice ?? "English_magnetic_voiced_man",
       turnType: "speculative_riff",
       text: `[whispering] It makes you wonder if our entire digital simulation is being hosted on Kevin's garage server. Pull that up, see if the diner is still open.`,
       tags: ["[whispering]"],
@@ -475,24 +535,49 @@ export function synthesizeDeterministicPodcastDraft(input: Pass2Input): HeadWrit
 // Pass 2 Generator Entry Point
 // ─────────────────────────────────────────────────────────────────────────────
 
+function describeBeatPlan(durationSeconds: number, clipBudgets: ClipWordBudget[], format: ShowOutputFormat): string {
+  if (format === "audio") {
+    return `Total Duration: ${durationSeconds} seconds (${clipBudgets.length} beats of ${AUDIO_BEAT_SECONDS} seconds each).`;
+  }
+  return `Total Duration: ${durationSeconds} seconds, delivered as ${clipBudgets.length} beat${clipBudgets.length === 1 ? "" : "s"} of ${VIDEO_BEAT_MIN_SECONDS} to ${VIDEO_BEAT_MAX_SECONDS} seconds each.
+MiniMax-H3 renders one video clip per beat (4 to 15 s), so every beat must be ONE continuous spoken line by a single host that fits its slot at ${SPOKEN_WORDS_PER_SECOND} words per second (roughly 20 to 30 words).`;
+}
+
+/** Only one voice exists on a solo format, whatever the model decided to call the speaker. */
+function pinSoloSpeaker(skill: ShowSkill, draft: HeadWriterDraft): void {
+  if (skill.hosts.length !== 1) {
+    return;
+  }
+  const only = skill.hosts[0];
+  for (const beat of draft.beats ?? []) {
+    beat.speaker = only.name;
+  }
+  // On a solo rant the model reliably addresses an imagined producer and
+  // hands them lines, which would then be synthesized as a second speaker.
+  for (const turn of draft.turns ?? []) {
+    if (turn.speaker !== only.name) {
+      turn.speaker = only.name;
+      turn.role = only.role;
+      turn.ttsVoice = only.ttsVoice;
+    }
+  }
+}
+
 async function generateDeskShowDraft(input: Pass2Input): Promise<HeadWriterDraft> {
   const { researchBrief, skill, durationSeconds } = input;
-  const clipBudgets = calculateClipWordBudgets(durationSeconds, skill, 8);
-  const primaryHost = skill.hosts[0] ?? { name: "John", role: "anchor" };
-  const client = getClient();
+  const format = input.format ?? "video";
+  const clipBudgets = planClipWordBudgets(durationSeconds, skill, format);
+  const primaryHost = skill.hosts[0] ?? { name: "John", role: "anchor", personaCraft: "", catchphrases: [] };
 
   if (input.options?.forceMock) {
     return synthesizeDeterministicDeskDraft(input);
   }
-  if (!client) {
-    throw new Error("No Google API key available for the head writer pass.");
-  }
 
   const prompt = `SHOW CONFIGURATION:
 Show Name: "${skill.name}"
-Host: "${primaryHost.name}" (Role: ${primaryHost.role})
-Persona Craft: "${primaryHost.personaCraft}"
-Catchphrases: ${primaryHost.catchphrases?.join(", ") ?? "None"}
+Hosts (a beat's speaker must be exactly one of these names):
+${skill.hosts.map(h => `- "${h.name}" (Role: ${h.role}): ${h.personaCraft}`).join("\n") || `- "${primaryHost.name}" (Role: ${primaryHost.role})`}
+Catchphrases: ${primaryHost.catchphrases?.join(", ") || "None"}
 Mean Sentence Length Words: ${skill.voiceMechanics.meanSentenceLengthWords}
 Profanity Register: ${skill.voiceMechanics.profanityRegister}
 Outrage/Affability Ratio: ${skill.voiceMechanics.outrageAffabilityRatio}
@@ -512,87 +597,82 @@ ${researchBrief.groundedFacts.map(f => `- [${f.category}] ${f.fact} (${f.bizarre
 Suggested Analogies:
 ${researchBrief.selectedAngle.suggestedAnalogies.map(a => `- ${a}`).join("\n")}
 
-ACT & CLIP BUDGET CONSTRAINTS:
-Total Duration: ${durationSeconds} seconds (${clipBudgets.length} clips of 8 seconds each)
-HARD TOTAL WORD BUDGET: ${Math.round(durationSeconds * 2.46)} words across all clips (spoken delivery measures 2.46 words/second).
-Staying within this total matters more than filling any individual clip to its maximum. Going over makes the episode run long.
-Clip Budgets:
-${clipBudgets.map(b => `- Clip ${b.clipIndex} (${b.startTimeSeconds}s - ${b.endTimeSeconds}s, Act: ${b.actName}): Target words: ${b.targetWordsMin}-${b.targetWordsMax} words`).join("\n")}
+ACT & BEAT BUDGET CONSTRAINTS:
+${describeBeatPlan(durationSeconds, clipBudgets, format)}
+HARD TOTAL WORD BUDGET: ${Math.round(durationSeconds * SPOKEN_WORDS_PER_SECOND)} words across all beats (spoken delivery measures ${SPOKEN_WORDS_PER_SECOND} words/second).
+Staying within this total matters more than filling any individual beat to its maximum. Going over makes the episode run long.
+Beat slots:
+${clipBudgets.map(b => `- Beat ${b.clipIndex} (${b.startTimeSeconds}s - ${b.endTimeSeconds}s, ${b.durationSeconds} s, Act: ${b.actName}, actId: ${b.assignedActId}): ${b.targetWordsMin}-${b.targetWordsMax} words`).join("\n")}
 
-Write a complete 3-Act HeadWriterDraft with ${clipBudgets.length} ComedicBeats matching the exact clip budgets, with planted callbacks, rule-of-three, tags, and Veo visual prompts. Output valid JSON only.`;
+Write a complete 3-Act HeadWriterDraft with exactly ${clipBudgets.length} ComedicBeats, one per slot in slot order, with planted callbacks, rule-of-three, tags, and MiniMax-H3 visual prompts. Output valid JSON only.`;
 
-  try {
-    const response = await client.models.generateContent({
-      model: "gemini-3.7-flash",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: {
-        systemInstruction: DESK_SHOW_SYSTEM_INSTRUCTION,
-        temperature: input.options?.temperature ?? 0.85,
-        // 8192 truncated the draft mid-JSON, which silently fell back to the
-        // deterministic synthesizer. Force real JSON and give it room to finish.
-        maxOutputTokens: 65536,
-        responseMimeType: "application/json",
-        thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
-      },
-    });
+  // Not falling back on failure. The deterministic skeleton is identical for
+  // every topic, so substituting it silently shipped the same episode
+  // repeatedly while reporting success.
+  const modelDraft = await generateJson({
+    // The beat count is part of the contract: the repair round tells the model
+    // the exact number when it writes too few or too many.
+    schema: HeadWriterDraftModelOutputSchema.extend({
+      beats: z.array(ComedicBeatSchema).length(clipBudgets.length),
+    }),
+    label: "pass2-head-writer",
+    system: DESK_SHOW_SYSTEM_INSTRUCTION,
+    prompt,
+    temperature: input.options?.temperature ?? 0.85,
+    // A smaller budget truncated the draft mid-JSON.
+    maxOutputTokens: 65536,
+  });
 
-    const rawText = response.text;
-    if (!rawText) {
-      throw new Error("Gemini returned empty text for Pass 2 desk show draft");
-    }
+  // The plan is authoritative for timing. The model's copy of the slots is
+  // redundant at best and drifts at worst, and a clip rendered to the wrong
+  // length cannot hold its line.
+  const beats: ComedicBeat[] = modelDraft.beats.map((beat, index) => {
+    const slot = clipBudgets[index];
+    const fullText = beat.fullText.trim();
+    return {
+      ...beat,
+      clipIndex: index,
+      actId: slot.assignedActId,
+      actName: slot.actName,
+      startTimeSeconds: slot.startTimeSeconds,
+      endTimeSeconds: slot.endTimeSeconds,
+      durationSeconds: slot.durationSeconds,
+      targetWordCount: Math.round((slot.targetWordsMin + slot.targetWordsMax) / 2),
+      actualWordCount: countWords(fullText) || beat.actualWordCount,
+      fullText,
+    };
+  });
 
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error("No JSON object found in Gemini Pass 2 response");
-    }
+  const validated = HeadWriterDraftSchema.parse({
+    ...modelDraft,
+    archetype: "writers_room_desk",
+    showId: `show-desk-${Date.now()}`,
+    topic: researchBrief.topic,
+    selectedPremise: researchBrief.selectedAngle,
+    beats,
+    metrics: {
+      ...modelDraft.metrics,
+      totalDurationSeconds: durationSeconds,
+      totalWordCount: beats.reduce((sum, beat) => sum + beat.actualWordCount, 0),
+    },
+    totalEstimatedSeconds: durationSeconds,
+  }) as HeadWriterDraft;
+  validated.clipWordBudgets = clipBudgets;
 
-    const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-    parsed.archetype = "writers_room_desk";
-    parsed.showId = `show-desk-${Date.now()}`;
-    parsed.topic = researchBrief.topic;
-    parsed.selectedPremise = researchBrief.selectedAngle;
-    parsed.clipWordBudgets = clipBudgets;
-
-    // Validate with Zod
-    const validated = HeadWriterDraftSchema.parse(parsed) as HeadWriterDraft;
-
-    // A one-host format must have exactly one voice. The model will otherwise
-    // address an imagined producer and hand them lines, which then get
-    // synthesized as a second speaker.
-    if (skill.hosts.length === 1 && validated.turns) {
-      const only = skill.hosts[0];
-      for (const turn of validated.turns) {
-        if (turn.speaker !== only.name) {
-          turn.speaker = only.name;
-          turn.role = only.role;
-          turn.ttsVoice = only.ttsVoice;
-        }
-      }
-    }
-
-    return validated;
-  } catch (error) {
-    // Not falling back. The deterministic skeleton is identical for every
-    // topic, so substituting it silently shipped the same episode repeatedly
-    // while reporting success.
-    throw error instanceof Error ? error : new Error(String(error));
-  }
+  pinSoloSpeaker(skill, validated);
+  return validated;
 }
 
 async function generatePodcastDraft(input: Pass2Input): Promise<HeadWriterDraft> {
   const { researchBrief, skill, durationSeconds } = input;
-  const client = getClient();
 
   if (input.options?.forceMock) {
     return synthesizeDeterministicPodcastDraft(input);
   }
-  if (!client) {
-    throw new Error("No Google API key available for the head writer pass.");
-  }
 
   const prompt = `SHOW CONFIGURATION:
 Show Name: "${skill.name}"
-Hosts:
+Hosts (a turn's speaker must be exactly one of these names):
 ${skill.hosts.map(h => `- ${h.name} (${h.role}, TTS Voice: ${h.ttsVoice}): ${h.personaCraft}`).join("\n")}
 Talking Point Tree:
 ${skill.podcastDynamics?.talkingPointTree.map(n => `- Node ${n.id}: ${n.title} (Premise: ${n.premise})`).join("\n") ?? "None"}
@@ -612,60 +692,29 @@ CONSTRAINTS:
 Total Duration: ${durationSeconds} seconds
 Construct a dynamic multi-speaker conversation traversing core nodes and tangents with natural snapbacks and acoustic tags. Output valid JSON only.`;
 
-  try {
-    const response = await client.models.generateContent({
-      model: "gemini-3.7-flash",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: {
-        systemInstruction: PODCAST_SYSTEM_INSTRUCTION,
-        temperature: input.options?.temperature ?? 0.85,
-        // 8192 truncated the draft mid-JSON, which silently fell back to the
-        // deterministic synthesizer. Force real JSON and give it room to finish.
-        maxOutputTokens: 65536,
-        responseMimeType: "application/json",
-        thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
-      },
-    });
+  // Not falling back; see the desk path above. Three consecutive shows on
+  // unrelated topics produced near-identical transcripts because this path
+  // silently substituted a fixed skeleton.
+  const modelDraft = await generateJson({
+    schema: HeadWriterDraftModelOutputSchema,
+    label: "pass2-head-writer",
+    system: PODCAST_SYSTEM_INSTRUCTION,
+    prompt,
+    temperature: input.options?.temperature ?? 0.85,
+    // A smaller budget truncated the draft mid-JSON.
+    maxOutputTokens: 65536,
+  });
 
-    const rawText = response.text;
-    if (!rawText) {
-      throw new Error("Gemini returned empty text for Pass 2 podcast draft");
-    }
+  const validated = HeadWriterDraftSchema.parse({
+    ...modelDraft,
+    archetype: "conversational_podcast",
+    showId: `show-podcast-${Date.now()}`,
+    topic: researchBrief.topic,
+    selectedPremise: researchBrief.selectedAngle,
+  }) as HeadWriterDraft;
 
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error("No JSON object found in Gemini Pass 2 response");
-    }
-
-    const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-    parsed.archetype = "conversational_podcast";
-    parsed.showId = `show-podcast-${Date.now()}`;
-    parsed.topic = researchBrief.topic;
-    parsed.selectedPremise = researchBrief.selectedAngle;
-
-    const validated = HeadWriterDraftSchema.parse(parsed) as HeadWriterDraft;
-
-    // A one-host format must have exactly one voice. On a solo rant the model
-    // reliably addresses an imagined producer and hands them lines, which would
-    // then be synthesized as a second speaker.
-    if (skill.hosts.length === 1 && validated.turns) {
-      const only = skill.hosts[0];
-      for (const turn of validated.turns) {
-        if (turn.speaker !== only.name) {
-          turn.speaker = only.name;
-          turn.role = only.role;
-          turn.ttsVoice = only.ttsVoice;
-        }
-      }
-    }
-
-    return validated;
-  } catch (error) {
-    // Not falling back — see the desk path above. Three consecutive shows on
-    // unrelated topics produced near-identical transcripts because this path
-    // silently substituted a fixed skeleton.
-    throw error instanceof Error ? error : new Error(String(error));
-  }
+  pinSoloSpeaker(skill, validated);
+  return validated;
 }
 
 export async function generateHeadWriterDraft(input: Pass2Input): Promise<HeadWriterDraft> {

@@ -5,7 +5,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
 import { env } from "@/app/lib/env";
-import { generateChatText } from "@/app/lib/genai";
+import { generateText } from "@/app/lib/gmi/text";
 import { buildPersonalizedPromptContext, getMemorySummary, getUserMemories, getUserTangents, updateMemoryFromInteraction } from "@/app/lib/memory-bank";
 import { generateSingleVoiceClip } from "@/app/lib/tts";
 import * as schema from "@/db/schema";
@@ -81,6 +81,136 @@ export async function getUserMemorySummaryAction(userId: string = "default_user"
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Grounding: what the show already knows
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// There is no live search behind the host. Every answer is grounded in the
+// episode's own record: the research brief the research pass persisted, the
+// transcript that was actually performed, the listener's memory bank, and the
+// host persona from the template. When the record does not cover a question,
+// the host says so instead of inventing a source.
+
+interface ResearchBriefLike {
+  summary?: string;
+  selectedAngle?: { title?: string; logline?: string };
+  groundedFacts?: Array<{ fact?: string; sourceTitle?: string; sourceUrl?: string; bizarreMetric?: string }>;
+  searchMetadata?: { searchQueriesUsed?: string[] };
+}
+
+/**
+ * Renders the stored research brief for the prompt. A compact listing of the
+ * facts and their sources gives the host something to cite; the raw JSON
+ * mostly gives it keys to parrot. Shows from before the structured brief
+ * stored prose, which passes through unchanged.
+ */
+function formatResearchBrief(raw: string | null | undefined): string {
+  const text = raw?.trim();
+  if (!text) {
+    return "(No research brief was stored for this episode.)";
+  }
+
+  let brief: ResearchBriefLike;
+  try {
+    brief = JSON.parse(text) as ResearchBriefLike;
+  } catch {
+    return text;
+  }
+  if (!brief || typeof brief !== "object") {
+    return text;
+  }
+
+  const lines: string[] = [];
+  if (brief.selectedAngle?.title) {
+    lines.push(`Angle: ${brief.selectedAngle.title}${brief.selectedAngle.logline ? ` (${brief.selectedAngle.logline})` : ""}`);
+  }
+  if (brief.summary) {
+    lines.push(`Summary: ${brief.summary}`);
+  }
+
+  const facts = (brief.groundedFacts ?? []).filter(f => f.fact);
+  if (facts.length > 0) {
+    lines.push("Grounded facts:");
+    for (const f of facts) {
+      const source = f.sourceTitle || f.sourceUrl ?
+        ` [source: ${[f.sourceTitle, f.sourceUrl].filter(Boolean).join(", ")}]` :
+        " [no source recorded]";
+      lines.push(`- ${f.fact}${f.bizarreMetric ? ` (${f.bizarreMetric})` : ""}${source}`);
+    }
+  }
+
+  const queries = brief.searchMetadata?.searchQueriesUsed ?? [];
+  if (queries.length > 0) {
+    lines.push(`Research queries the show ran: ${queries.join("; ")}`);
+  }
+
+  return lines.length > 0 ? lines.join("\n") : text;
+}
+
+interface TemplateHost {
+  name?: string;
+  personality?: string;
+  position?: string;
+  role?: string;
+}
+
+interface ShowGrounding {
+  hostName: string;
+  showName: string;
+  persona: string;
+  topic: string;
+  transcript: string;
+  researchBrief: string;
+}
+
+/** Loads the show row and the host's persona from its template. */
+async function loadShowGrounding(
+  showId: string,
+  requestedHost: string | undefined,
+  overrides: { topic?: string; transcript?: string; researchContext?: string } = {},
+): Promise<ShowGrounding> {
+  const show = await db.query.generatedShows.findFirst({
+    where: eq(schema.generatedShows.id, showId),
+  });
+  if (!show) {
+    throw new Error(`Show ${showId} was not found, so there is nothing to ground the host's answer in.`);
+  }
+
+  const template = await db.query.showTemplates.findFirst({
+    where: eq(schema.showTemplates.id, show.templateId),
+  });
+  const hosts = (template?.hosts ?? []) as TemplateHost[];
+  // A persona only when it belongs to the named host; a name the template
+  // does not know keeps its name and speaks without one, rather than wearing
+  // the first host's personality.
+  const host = requestedHost ? hosts.find(h => h.name === requestedHost) : hosts[0];
+
+  return {
+    hostName: requestedHost || host?.name || "Host",
+    showName: template?.name ?? "the show",
+    persona: [host?.personality, host?.position ? `Position: ${host.position}` : undefined].filter(Boolean).join(" "),
+    topic: overrides.topic?.trim() || show.topic,
+    transcript: overrides.transcript?.trim() || show.transcript?.trim() || "(No transcript was stored for this episode.)",
+    researchBrief: formatResearchBrief(overrides.researchContext?.trim() || show.researchContext),
+  };
+}
+
+function buildHostSystemPrompt(grounding: ShowGrounding, memoryContext: string): string {
+  return `You are ${grounding.hostName}, host of "${grounding.showName}", talking to a viewer about this episode on "${grounding.topic}".
+${grounding.persona ? `Your persona: ${grounding.persona}\n` : ""}Stay completely in character with your signature humor, wit, pacing, and comedic worldview.
+
+${memoryContext}
+
+WHAT THIS SHOW KNOWS
+Answer from the episode's research brief and transcript below. They are your only sources: there is no live search behind you. If the brief does not cover something, say what the show did not research rather than inventing a fact or a source. Joke freely around what is here, and label any speculation as speculation.
+
+RESEARCH BRIEF:
+${grounding.researchBrief}
+
+TRANSCRIPT:
+${grounding.transcript}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Send Message (with Memory Bank & Voice Synthesis)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -130,41 +260,33 @@ export async function sendChatMessageAction(
     // Load Memory Bank personalization for this listener
     const memoryContext = await buildPersonalizedPromptContext(effectiveUserId);
 
-    // Build messages for LLM
-    const hostName = context.hostName || "Host";
-    const systemPrompt = `You are ${hostName}, the host of this talk show segment about "${context.topic}".
-Stay completely in character with your signature humor, wit, pacing, and comedic worldview.
+    // The page passes the show's own transcript and brief; the row is the
+    // source of truth when it does not.
+    const grounding = await loadShowGrounding(showId, context.hostName, {
+      topic: context.topic,
+      transcript: context.transcript,
+      researchContext: context.researchContext,
+    });
+    const hostName = grounding.hostName;
 
-${memoryContext}
-
-You have access to the show's full transcript and research context below. Answer the user's questions directly in-character.
-
-TRANSCRIPT:
-${context.transcript}
-
-RESEARCH CONTEXT:
-${context.researchContext}
+    const systemPrompt = `${buildHostSystemPrompt(grounding, memoryContext)}
 
 Guidelines:
 - Speak directly in the first person ("I think...", "Look, here's the deal...")
-- Ground your answers in the transcript and research when possible
+- Cite the brief's facts when they answer the question, naming the source when one is recorded
 - Keep responses conversational, witty, and punchy (2-4 sentences unless the user explicitly asks for a deep dive)
-- Adapt your delivery based on the listener's known preferences from the Memory Bank`;
+- Adapt your delivery to the listener's known preferences from the Memory Bank without mentioning it`;
 
     const messages = history.map(msg => ({
       role: msg.role as "user" | "assistant",
       content: msg.content,
     }));
 
-    // Call Gemini through the shared client so this stays on the same auth
-    // surface (Vertex express) as the rest of the pipeline.
-    const responseText = await generateChatText({
+    const responseText = await generateText({
       system: systemPrompt,
       messages,
-      model: "gemini-3.7-flash",
-      // Viewers ask about things the episode skipped, and about events newer than
-      // the model's training data, so ground the host's answers in live search.
-      useSearch: true,
+      temperature: 0.8,
+      maxOutputTokens: 1024,
     });
     const result = { text: responseText };
 
@@ -178,7 +300,7 @@ Guidelines:
       })
       .returning();
 
-    // Generate voice clip with Gemini TTS if requested
+    // Generate a voice clip in the host's voice if requested
     let audioData: string | undefined;
     if (context.generateVoice) {
       try {
@@ -193,7 +315,7 @@ Guidelines:
       effectiveUserId,
       userMessage,
       result.text,
-      context.topic,
+      grounding.topic,
       showId,
     );
 
@@ -223,26 +345,30 @@ export async function createShowTangentAction(
   userId: string = "default_user",
 ): Promise<CreateTangentResult> {
   try {
-    const memoryContext = await buildPersonalizedPromptContext(userId);
-    const tangentPrompt = `You are ${hostName}. A listener just interrupted your show to ask:
-"${question}"
+    const memoryContext = await buildPersonalizedPromptContext(userId, { showType: "tangent" });
+    const grounding = await loadShowGrounding(showId, hostName, { topic });
 
-Topic: ${topic}
-${memoryContext}
+    const systemPrompt = `${buildHostSystemPrompt(grounding, memoryContext)}
+
+You are writing a spoken mini-tangent, not a chat reply. Return ONLY the spoken words: no sound effects, stage directions, or speaker labels.`;
+
+    const tangentPrompt = `A listener just interrupted your show to ask:
+"${question}"
 
 Write a 30-45 second mini-tangent audio monologue (approx 60-80 words).
 Requirements:
 - Jump straight in with high energy and host humor
-- Deliver a concise, hilarious, and enlightening answer
-- End with a punchy sign-off back to the main broadcast
-- Return ONLY the spoken words, no sound effects or stage directions`;
+- Deliver a concise, hilarious, and enlightening answer built on the research brief and transcript
+- If the show never researched this, say so on air and riff on what it did find instead of inventing facts
+- End with a punchy sign-off back to the main broadcast`;
 
-    const scriptText = (await generateChatText({
+    const scriptText = (await generateText({
+      system: systemPrompt,
       prompt: tangentPrompt,
-      model: "gemini-3.7-flash",
-      useSearch: true,
+      temperature: 0.9,
+      maxOutputTokens: 512,
     })).trim();
-    const audioData = await generateSingleVoiceClip(scriptText, hostName);
+    const audioData = await generateSingleVoiceClip(scriptText, grounding.hostName);
 
     const [savedTangent] = await db
       .insert(schema.showTangents)
@@ -250,7 +376,7 @@ Requirements:
         showId,
         userId,
         question,
-        hostName,
+        hostName: grounding.hostName,
         scriptText,
         audioData,
         durationSeconds: 35,
@@ -262,7 +388,7 @@ Requirements:
       userId,
       question,
       scriptText,
-      topic,
+      grounding.topic,
       showId,
     );
 

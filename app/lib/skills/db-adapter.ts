@@ -1,5 +1,6 @@
 import type { NewShowTemplate, ShowTemplate } from "@/db/schema";
 
+import { DEFAULT_HOST_VOICE, resolveHostTtsVoice } from "./guardrails";
 import { listShowSkills, resolveSkillForShow } from "./registry";
 import type { HostSkillConfig, ShowSkill } from "./types";
 
@@ -43,7 +44,9 @@ export function dbTemplateToSkill(template: ShowTemplate | NewShowTemplate): Sho
       name: raw.name ?? baseHost.name,
       role: raw.role ?? baseHost.role ?? "anchor",
       position: raw.position ?? baseHost.position ?? "center",
-      ttsVoice: raw.ttsVoice ?? baseHost.ttsVoice ?? "Orus",
+      // Templates saved before the MiniMax migration may still carry a legacy
+      // voice name; resolving it here keeps those rows validating and voiced.
+      ttsVoice: resolveHostTtsVoice(raw.ttsVoice, baseHost.ttsVoice ?? DEFAULT_HOST_VOICE),
       personaCraft: raw.personaCraft ?? raw.personality ?? baseHost.personaCraft,
       personality: raw.personality ?? raw.personaCraft ?? baseHost.personality,
       catchphrases: Array.isArray(raw.catchphrases) ? raw.catchphrases : (baseHost.catchphrases ?? []),

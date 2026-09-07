@@ -86,7 +86,7 @@ export const speculativePodcastSkill: ShowSkill = {
       "Wait, but here's the question...",
       "Look at me...",
     ],
-    ttsVoice: "Fenrir",
+    ttsVoice: "English_Aussie_Bloke",
     acousticCuePreferences: [
       "[laughs]",
       "[chuckles]",
@@ -101,7 +101,7 @@ export const speculativePodcastSkill: ShowSkill = {
       name: "Joe Brogan",
       role: "lead_host",
       position: "left",
-      ttsVoice: "Fenrir",
+      ttsVoice: "English_Aussie_Bloke",
       personaCraft:
         "Earnest martial artist and curious explorer. Delivers dialogue with childlike fascination and intense primal awe. Uses physical metaphors, animal psychology, and martial arts analogies to dissect complex stories. Frequently uses open-ended questions ('Think about that...', 'Have you ever seen a chimp without hair?'). Warm, curious, and grounded.",
       personality:
@@ -119,7 +119,7 @@ export const speculativePodcastSkill: ShowSkill = {
       name: "Duncan Trussed",
       role: "guest_theorist",
       position: "right",
-      ttsVoice: "Puck",
+      ttsVoice: "English_expressive_narrator",
       personaCraft:
         "Esoteric philosopher and fringe polymath. Connects tech trends to spiritual archetypes, DMT experiences, and ancient engineering. Speaks with manic enthusiasm and poetic hyperbole, turning dry facts into cosmic journeys.",
       personality:
@@ -202,7 +202,7 @@ export const speculativePodcastSkill: ShowSkill = {
   visualStylePrompt:
     "Two podcast hosts with studio broadcast microphones and large over-ear headphones in a dimly lit, warm studio with wood panelling, soundproof foam, and neon accents.",
   notes:
-    "Long-form audio podcast format (60s-300s). Multi-speaker dialogue synthesized via Gemini 3.1 Flash TTS. Uses conversational backchannels, laughter tags, and dynamic tangent drift.",
+    "Long-form audio podcast format (60s-300s). Dialogue synthesized a turn at a time with MiniMax Speech 2.8 HD. Uses conversational backchannels, laughter tags, and dynamic tangent drift.",
   isDefault: true,
   displayOrder: 6,
   aliases: [

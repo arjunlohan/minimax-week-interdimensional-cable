@@ -16,6 +16,9 @@ dotenv.config({ path: ".env.local" });
 
 const DEFAULT_LANGUAGE = "en";
 
+/** Rows per INSERT. Five bound parameters per chunk keeps this far under pg's limit. */
+const CHUNK_INSERT_BATCH = 500;
+
 // Parse command line args
 const args = process.argv.slice(2);
 const languageIndex = args.indexOf("--language");
@@ -128,17 +131,6 @@ async function importMuxAssets() {
 
       console.log(`✓ Video record saved (ID: ${video.id})`);
 
-      // Generate embeddings using Google GenAI text-embedding-004
-      console.log(`Generating Google embeddings for asset ${asset.id}...`);
-
-      const { buildGenAIClient } = await import("../app/lib/genai");
-      const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-      if (!apiKey) {
-        throw new Error("GEMINI_API_KEY or GOOGLE_GENERATIVE_AI_API_KEY required");
-      }
-      // Shared factory: express (`AQ.*`) keys are Vertex-only and 403 otherwise.
-      const client = buildGenAIClient(apiKey);
-
       // Parse VTT into chunks if available
       interface ChunkData {
         text: string;
@@ -177,7 +169,8 @@ async function importMuxAssets() {
         }
       }
 
-      // If no transcript, use title and summary as a chunk
+      // Without a transcript the title is the only searchable text, so index
+      // that as a single chunk covering the whole asset.
       if (rawChunks.length === 0) {
         rawChunks.push({
           text: `${(asset.meta as { title?: string })?.title || "Video"} - ${asset.id}`,
@@ -186,37 +179,28 @@ async function importMuxAssets() {
         });
       }
 
-      console.log(`✓ Prepared ${rawChunks.length} chunks for embedding`);
+      console.log(`✓ Prepared ${rawChunks.length} chunks for full-text indexing`);
 
       // Delete existing chunks for this video (in case of re-import)
       await db
         .delete(schema.videoChunks)
         .where(eq(schema.videoChunks.videoId, video.id));
 
-      // Embed each chunk with Google text-embedding-004
-      for (let i = 0; i < rawChunks.length; i++) {
-        const chunk = rawChunks[i];
-        const embRes = await client.models.embedContent({
-          model: "text-embedding-004",
-          contents: [{ role: "user", parts: [{ text: chunk.text }] }],
-        });
-        const values = embRes.embeddings?.[0]?.values;
-        if (values && values.length > 0) {
-          const embeddingStr = `[${values.join(",")}]`;
-          await pool.query(
-            `INSERT INTO video_chunks (video_id, chunk_index, start_time, end_time, embedding)
-             VALUES ($1, $2, $3, $4, $5::vector)`,
-            [
-              video.id,
-              i,
-              chunk.startTime ?? null,
-              chunk.endTime ?? null,
-              embeddingStr,
-            ],
-          );
-        }
+      // Store each chunk's text with its timings. Postgres derives the
+      // tsvector (`search_vector`) from `text` on insert, so search needs no
+      // model call at import or query time.
+      const rows = rawChunks.map((chunk, i) => ({
+        videoId: video.id,
+        chunkIndex: i,
+        startTime: chunk.startTime ?? null,
+        endTime: chunk.endTime ?? null,
+        text: chunk.text,
+      }));
+
+      for (let offset = 0; offset < rows.length; offset += CHUNK_INSERT_BATCH) {
+        await db.insert(schema.videoChunks).values(rows.slice(offset, offset + CHUNK_INSERT_BATCH));
       }
-      console.log(`✓ Saved ${rawChunks.length} chunks with Google text-embedding-004 embeddings`);
+      console.log(`✓ Saved ${rows.length} transcript chunks for Postgres full-text search`);
     } catch (error) {
       console.error(`✗ Error processing asset ${asset.id}:`, error);
     }

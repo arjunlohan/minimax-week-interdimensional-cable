@@ -1,38 +1,25 @@
-import { ThinkingLevel } from "@google/genai";
-
+import { resolveGmiKey } from "@/app/lib/api-keys";
+import { generateText } from "@/app/lib/gmi/text";
 import type { ShowSkill } from "@/app/lib/skills/types";
-
-import { resolveVertexKey } from "../api-keys";
-import { buildGenAIClient } from "../genai";
 
 import { FinalScriptSchema } from "./schemas";
 import type {
   ComedicBeat,
+  ContentFilterSanitizationReport,
   FinalScript,
   FinalScriptSegment,
   Pass3Input,
   Pass3Output,
   TableReadJokeEvaluation,
   TableReadReport,
-  VeoRaiSanitizationReport,
 } from "./types";
-
-import type { GoogleGenAI } from "@google/genai";
-
-function getClient(): GoogleGenAI | null {
-  const apiKey = resolveVertexKey();
-  if (!apiKey) {
-    return null;
-  }
-  return buildGenAIClient(apiKey);
-}
 
 function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. Pre-Flight Veo 3.1 RAI Safety Sanitizer
+// 1. Pre-Flight Content-Filter Sanitizer (MiniMax-H3 likeness and trademark filters)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const RAI_REPLACEMENT_RULES: Array<{ pattern: RegExp; replacement: string; label: string }> = [
@@ -70,7 +57,11 @@ const RAI_REPLACEMENT_RULES: Array<{ pattern: RegExp; replacement: string; label
   { pattern: /\bexact physical likeness of\b/gi, replacement: "satirical host persona reminiscent of", label: "likeness -> satirical host persona" },
 ];
 
-export function sanitizeForVeoRai(text: string): { sanitizedText: string; report: VeoRaiSanitizationReport } {
+/**
+ * Rewrites the network names, living performers and likeness language that
+ * trip a video model's content filter, in both dialogue and visual prompts.
+ */
+export function sanitizeForContentFilter(text: string): { sanitizedText: string; report: ContentFilterSanitizationReport } {
   let sanitized = text;
   const replacementsApplied: Array<{ pattern: string; replacement: string }> = [];
 
@@ -87,10 +78,13 @@ export function sanitizeForVeoRai(text: string): { sanitizedText: string; report
       originalLength: text.length,
       sanitizedLength: sanitized.length,
       replacementsApplied,
-      isCleanForVeo: true,
+      isCleanForContentFilter: true,
     },
   };
 }
+
+/** Legacy name; the show workflow imports it dynamically. */
+export const sanitizeForVeoRai = sanitizeForContentFilter;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. Stylometric Voice Tuning Engine
@@ -216,8 +210,11 @@ export async function evaluateAndPunchUpJokes(
   beats: ComedicBeat[],
   skill: ShowSkill,
   minThreshold = 7.0,
+  options: { punchUp?: boolean } = {},
 ): Promise<{ evaluations: TableReadJokeEvaluation[]; revisedBeats: ComedicBeat[]; report: TableReadReport }> {
-  const client = getClient();
+  // The punch-up is a quality pass, not a content source, so running without
+  // it is legitimate: mock mode skips it, and so does a scope with no key.
+  const canPunchUp = (options.punchUp ?? true) && Boolean(resolveGmiKey());
   const evaluations: TableReadJokeEvaluation[] = [];
   const revisedBeats: ComedicBeat[] = [...beats];
 
@@ -228,8 +225,7 @@ export async function evaluateAndPunchUpJokes(
     const beat = beats[i];
     let evaluation = evaluateSingleJokeDeterministic(beat.setup, beat.punchline, i, minThreshold);
 
-    // If client available and joke is under threshold, execute punch-up
-    if (!evaluation.passed && client) {
+    if (!evaluation.passed && canPunchUp) {
       try {
         const punchUpPrompt = `You are an Emmy-winning Late-Night Punch-Up Writer.
 The following joke scored below 7.0/10 in the table-read:
@@ -244,24 +240,18 @@ Write a punched-up, razor-sharp replacement punchline that:
 
 Output ONLY the revised punchline sentence.`;
 
-        const response = await client.models.generateContent({
-          model: "gemini-3.7-flash",
-          contents: [{ role: "user", parts: [{ text: punchUpPrompt }] }],
-          config: {
-            temperature: 0.9,
-            // Thinking tokens count against this budget, and 3.7 Flash thinks
-            // even with no thinking config set. At 100 the model spent the
-            // entire allowance reasoning, returned an empty candidate with
-            // finishReason MAX_TOKENS, and the length guard below silently
-            // skipped the rewrite on every joke. The output itself is one
-            // sentence; the headroom is for the reasoning that produces it.
-            maxOutputTokens: 8192,
-            thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
-          },
+        const response = await generateText({
+          prompt: punchUpPrompt,
+          temperature: 0.9,
+          // The answer is one sentence, but MiniMax-M3 reasons before it
+          // writes and that reasoning shares the budget. A tight budget ends
+          // the call with no answer, and the length guard below then skips
+          // the rewrite on every joke.
+          maxOutputTokens: 8192,
         });
 
-        const newPunchline = response.text?.replace(/^["']|["']$/g, "").trim();
-        if (newPunchline && newPunchline.length > 5) {
+        const newPunchline = response.replace(/^["']|["']$/g, "").trim();
+        if (newPunchline.length > 5) {
           const original = beat.punchline;
           beat.punchline = newPunchline;
           beat.fullText = `${beat.setup} ${newPunchline} ${beat.tags?.join(" ") ?? ""}`.trim();
@@ -283,7 +273,7 @@ Output ONLY the revised punchline sentence.`;
           revisedCount++;
         }
       } catch (err) {
-        console.warn("[pass3-voice-prune] Punch-up LLM failed, retaining beat with adjusted timing:", err);
+        console.warn("[pass3-voice-prune] Punch-up call to MiniMax-M3 failed, retaining the original line:", err);
       }
     }
 
@@ -332,14 +322,15 @@ export async function runPass3VoiceAndPrune(input: Pass3Input): Promise<Pass3Out
       draft.beats,
       skill,
       options?.minScoreThreshold ?? 7.0,
+      { punchUp: !options?.forceMock },
     );
     tableReadReport = report;
 
-    // 2. Stylometric Tuning & RAI Sanitization
+    // 2. Stylometric Tuning & Content-Filter Sanitization
     segments = revisedBeats.map((beat, idx) => {
       const tuned = applyStylometricVoiceTuning(beat.fullText, skill);
-      const sanitizedDialogue = sanitizeForVeoRai(tuned.tunedText);
-      const sanitizedPrompt = sanitizeForVeoRai(beat.visualPrompt);
+      const sanitizedDialogue = sanitizeForContentFilter(tuned.tunedText);
+      const sanitizedPrompt = sanitizeForContentFilter(beat.visualPrompt);
 
       return {
         clipIndex: idx,
@@ -362,7 +353,7 @@ export async function runPass3VoiceAndPrune(input: Pass3Input): Promise<Pass3Out
 
     segments = turns.map((turn, idx) => {
       const tuned = applyStylometricVoiceTuning(turn.text, skill);
-      const sanitized = sanitizeForVeoRai(tuned.tunedText);
+      const sanitized = sanitizeForContentFilter(tuned.tunedText);
       const startTime = currentTime;
       const endTime = currentTime + turn.estimatedDurationSeconds;
       currentTime = endTime;
@@ -411,7 +402,7 @@ export async function runPass3VoiceAndPrune(input: Pass3Input): Promise<Pass3Out
   // Voice Tuning Global Report
   const allText = segments.map(s => s.text).join(" ");
   const voiceReportData = applyStylometricVoiceTuning(allText, skill);
-  const globalSanitization = sanitizeForVeoRai(allText);
+  const globalSanitization = sanitizeForContentFilter(allText);
 
   const finalScript: FinalScript = {
     title: draft.showTitle,

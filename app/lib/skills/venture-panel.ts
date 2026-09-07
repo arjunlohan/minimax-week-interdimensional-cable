@@ -98,7 +98,7 @@ export const venturePanelSkill: ShowSkill = {
       name: "Chamath Capitalia",
       role: "lead_host",
       position: "far_left",
-      ttsVoice: "Charon",
+      ttsVoice: "English_magnetic_voiced_man",
       personaCraft:
         "The contrarian capital allocator. Speaks slowly and with total conviction, reframing any topic as a structural inevitability he predicted earlier. Delivers grim macro forecasts with the calm of someone already positioned for them.",
       personality:
@@ -110,7 +110,7 @@ export const venturePanelSkill: ShowSkill = {
       name: "Jason Calamaris",
       role: "co-host",
       position: "left",
-      ttsVoice: "Puck",
+      ttsVoice: "English_Persuasive_Man",
       personaCraft:
         "The moderator and enthusiast. Keeps the running order, fails to keep order, and is audibly delighted by the chaos. Fastest talker on the panel; interrupts and is interrupted.",
       personality:
@@ -122,7 +122,7 @@ export const venturePanelSkill: ShowSkill = {
       name: "David Stacks",
       role: "straight_man",
       position: "right",
-      ttsVoice: "Orus",
+      ttsVoice: "English_Trustworth_Man",
       personaCraft:
         "The operator. Dry, precise, politically pointed. Delivers the most cutting line in the flattest possible register and does not laugh at his own jokes.",
       personality:
@@ -134,7 +134,7 @@ export const venturePanelSkill: ShowSkill = {
       name: "David Friedegg",
       role: "co_host_sounding_board",
       position: "far_right",
-      ttsVoice: "Fenrir",
+      ttsVoice: "English_Insightful_Speaker",
       personaCraft:
         "The science seat. Waits out the argument, then reframes it on a geological or biological timescale that makes everyone else's position look parochial. Genuinely informative, which is the joke.",
       personality:
@@ -207,7 +207,7 @@ export const venturePanelSkill: ShowSkill = {
   visualStylePrompt:
     "Four-way remote panel of investors on a video call grid, each in a home office with bookshelves and warm lamp light, casual quarter-zips and open collars, laptop-camera framing.",
   notes:
-    "Four-speaker roundtable (60s-300s). Seat dynamics drive the comedy: fixed personas with stable, predictable disagreements. Synthesized with four distinct Gemini TTS voices.",
+    "Four-speaker roundtable (60s-300s). Seat dynamics drive the comedy: fixed personas with stable, predictable disagreements. Synthesized a turn at a time with four distinct MiniMax Speech 2.8 HD voices.",
   isDefault: false,
   displayOrder: 1,
   aliases: [

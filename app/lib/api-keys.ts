@@ -8,24 +8,21 @@ import { env } from "./env";
  * Bring-your-own-key support.
  *
  * Model inference is the overwhelming majority of this product's running cost,
- * so a public deployment cannot spend the owner's Google credits on strangers.
- * Visitors supply their own keys and are billed by Google directly.
+ * so a public deployment cannot spend the owner's GMI Cloud credits on
+ * strangers. Visitors supply their own key and GMI Cloud bills them directly.
  *
- * The keys are scoped with AsyncLocalStorage rather than threaded through every
- * function signature: ten modules build their own client, and each one only
- * needs to prefer the context key over the environment key.
+ * The key is scoped with AsyncLocalStorage rather than threaded through every
+ * function signature: every GMI client only needs to prefer the context key
+ * over the environment key.
  *
- * Durable workflow steps do not share one async context — a run can span several
- * invocations — so a run's keys are also encrypted onto its show row and the
- * context is re-established at the top of each step. `clearShowKeys` wipes them
- * when the run finishes.
+ * Durable workflow steps do not share one async context (a run can span several
+ * invocations), so a run's key is also encrypted onto its show row and the
+ * context is re-established at the top of each step.
  */
 
 export interface UserApiKeys {
-  /** Vertex / Agent Platform key. Drives research, scripting, TTS, embeddings, Veo. */
-  vertexKey: string;
-  /** Optional Gemini Developer API key, used only for the Omni video path. */
-  geminiKey?: string;
+  /** GMI Cloud API key. Drives every MiniMax model call. */
+  gmiKey: string;
 }
 
 const keyStore = new AsyncLocalStorage<UserApiKeys>();
@@ -51,38 +48,26 @@ export function requiresUserApiKeys(): boolean {
 }
 
 /**
- * The Vertex key to use right now: the caller's if present, otherwise the
- * server's — unless this deployment has opted out of using the server's.
+ * The GMI Cloud key to use right now: the caller's if present, otherwise the
+ * server's, unless this deployment has opted out of using the server's.
  */
-export function resolveVertexKey(): string | undefined {
-  const supplied = keyStore.getStore()?.vertexKey;
+export function resolveGmiKey(): string | undefined {
+  const supplied = keyStore.getStore()?.gmiKey;
   if (supplied) {
     return supplied;
   }
   if (requiresUserApiKeys()) {
     return undefined;
   }
-  return env.GEMINI_API_KEY ?? env.GOOGLE_GENERATIVE_AI_API_KEY;
-}
-
-/** The Gemini Developer API key for the Omni video path, same precedence. */
-export function resolveGeminiDeveloperKey(): string | undefined {
-  const supplied = keyStore.getStore()?.geminiKey;
-  if (supplied) {
-    return supplied;
-  }
-  if (requiresUserApiKeys()) {
-    return undefined;
-  }
-  return env.GEMINI_VIDEO_API_KEY;
+  return env.GMI_CLOUD_APIKEY;
 }
 
 /** Thrown when generation is attempted with no usable key. */
 export class MissingApiKeyError extends Error {
   constructor() {
     super(
-      "This deployment requires your own Google API key. Add one in Settings — " +
-      "it is used only for your own generations and billed to your Google account.",
+      "No GMI Cloud API key is available. Add GMI_CLOUD_APIKEY to the server environment, " +
+      "or supply your own key in Settings: it is used only for your own generations and billed to your GMI Cloud account.",
     );
     this.name = "MissingApiKeyError";
   }
@@ -92,8 +77,8 @@ export class MissingApiKeyError extends Error {
 // At-rest encryption
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// A run's keys must outlive a single request, so they sit on the show row until
-// the run ends. Encrypting them means a database dump alone does not leak a
+// A run's key must outlive a single request, so it sits on the show row until
+// the run ends. Encrypting it means a database dump alone does not leak a
 // visitor's credentials.
 
 const ALGORITHM = "aes-256-gcm";
@@ -140,7 +125,8 @@ export function decryptApiKeys(payload: string | null | undefined): UserApiKeys 
       decipher.update(Buffer.from(dataPart, "base64url")),
       decipher.final(),
     ]).toString("utf8");
-    return JSON.parse(plaintext) as UserApiKeys;
+    const parsed = JSON.parse(plaintext) as Partial<UserApiKeys>;
+    return typeof parsed.gmiKey === "string" && parsed.gmiKey.length > 0 ? { gmiKey: parsed.gmiKey } : undefined;
   } catch {
     // Wrong secret, tampering, or a legacy row. Never surface the reason.
     return undefined;
@@ -151,11 +137,13 @@ export function decryptApiKeys(payload: string | null | undefined): UserApiKeys 
 // Validation
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Shape check only — cheap, and catches the common paste mistakes. */
-export function looksLikeGoogleKey(key: string): boolean {
+/**
+ * Shape check only. GMI Cloud keys are opaque tokens, so this catches pasted
+ * whitespace and truncated copies rather than asserting a prefix.
+ */
+export function looksLikeGmiKey(key: string): boolean {
   const k = key.trim();
-  // Vertex/Agent Platform express keys start "AQ.", Developer API keys "AIza".
-  return (k.startsWith("AQ.") || k.startsWith("AIza")) && k.length >= 30;
+  return k.length >= 20 && !/\s/.test(k);
 }
 
 /** Redacts a key for display: keeps enough to recognise, never enough to use. */

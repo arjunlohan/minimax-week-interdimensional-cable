@@ -1,11 +1,10 @@
-import { ThinkingLevel } from "@google/genai";
-
+import { MissingApiKeyError, resolveGmiKey } from "@/app/lib/api-keys";
+import { generateJson } from "@/app/lib/gmi/text";
+import { extractTopicUrl, gatherSources, toSearchQuery } from "@/app/lib/research/sources";
+import type { ResearchSource } from "@/app/lib/research/sources";
 import { getDefaultShowSkill } from "@/app/lib/skills/registry";
 
-import { MissingApiKeyError, resolveVertexKey } from "../api-keys";
-import { buildGenAIClient } from "../genai";
-
-import { ResearchBriefSchema } from "./schemas";
+import { ResearchBriefDraftSchema, ResearchBriefSchema } from "./schemas";
 import type {
   ComedicPremiseAngle,
   GroundedFact,
@@ -16,16 +15,6 @@ import type {
   SearchGroundingMetadata,
 } from "./types";
 
-import type { GoogleGenAI } from "@google/genai";
-
-function getClient(): GoogleGenAI | null {
-  const apiKey = resolveVertexKey();
-  if (!apiKey) {
-    return null;
-  }
-  return buildGenAIClient(apiKey);
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // System Prompt for Pass 1 Grounded Research
 // ─────────────────────────────────────────────────────────────────────────────
@@ -33,7 +22,7 @@ function getClient(): GoogleGenAI | null {
 const PASS1_SYSTEM_INSTRUCTION = `You are the Lead Investigative Researcher and Satirical Premise Architect for an elite television and podcast writers' room (in the caliber of Last Week Tonight, The Daily Show, and top speculative satire).
 
 YOUR OBJECTIVES:
-1. RESEARCH & GROUNDING: Search for and extract hyper-specific, verified facts, bizarre real-world statistics, institutional quotes, and policy absurdities on the topic.
+1. RESEARCH & GROUNDING: Extract hyper-specific facts, bizarre real-world statistics, institutional quotes, and policy absurdities on the topic. Draw them from the <sources> block when one is supplied, and from your own knowledge otherwise.
 2. INCONGRUITY-RESOLUTION ANALYSIS: Identify stark contradictions between stated official rules/intentions and chaotic real-world reality (Incongruity Seeds).
 3. COMEDIC PREMISE ANGLE GENERATION: Formulate 3 to 5 distinct comedic premise angles spanning varied comedic archetypes:
    - "absurdist_escalation": Slippery-slope hyperbole leading to cosmic disaster.
@@ -47,19 +36,22 @@ YOUR OBJECTIVES:
    - Step 2 (Absurdist Extension): A logical but ridiculous extension into everyday life.
    - Step 3 (Catastrophic/Cosmic Extreme): The ultimate chaotic breakdown of society or physical logic.
 
+SOURCE DISCIPLINE:
+- A fact may carry "sourceUrl" and "sourceTitle" ONLY when it comes from a source in the <sources> block, with the URL copied exactly as given there. Set "verified": true on those facts.
+- A fact from your own knowledge must OMIT "sourceUrl" and "sourceTitle" entirely and set "verified": false.
+- Never invent a URL, a publication, a study, or a quotation. An unsourced fact is fine; a fabricated source is not.
+
 OUTPUT FORMAT:
 Output ONLY valid JSON matching this schema:
 {
-  "topic": string,
-  "topicType": "custom" | "news_link" | "hacker_news" | "trend" | "freetext",
   "summary": string (comprehensive 2-3 paragraph satirical overview),
   "groundedFacts": [
     {
       "id": "fact-1",
       "fact": string,
-      "sourceTitle": string,
-      "sourceUrl": string (if available),
-      "verified": true,
+      "sourceTitle": string (only when citing a listed source),
+      "sourceUrl": string (only when citing a listed source),
+      "verified": boolean (true only when citing a listed source),
       "category": "statistic" | "historical_trivia" | "institutional_quote" | "technical_detail" | "policy_absurdity",
       "absurdityScore": number (1.0 to 10.0),
       "bizarreMetric": string (e.g. "$42M spent on pigeon training")
@@ -212,7 +204,7 @@ export function createMockResearchBrief(input: Pass1ResearchInput): ResearchBrie
       recommendedActSpineMapping: {
         act1Thesis: `We were promised that ${topic} would revolutionize society, but it turns out the only thing it revolutionized is corporate remorse.`,
         act2Escalation: `Look at the numbers: 84 pages of terms and conditions, supported by a 1987 diner napkin patent from a guy named Kevin.`,
-        act3ClimaxOrCTA: `So tonight, we demand accountability—or at least an apology that comes with a functioning toaster.`,
+        act3ClimaxOrCTA: `So tonight, we demand accountability, or at least an apology that comes with a functioning toaster.`,
       },
       comedicPremise: `Corporate greed masked as cutting-edge innovation in ${topic}.`,
       angle: "hypocrisy_exposure",
@@ -342,6 +334,46 @@ export function createMockResearchBrief(input: Pass1ResearchInput): ResearchBrie
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Prompt assembly
+// ─────────────────────────────────────────────────────────────────────────────
+
+function attributeSafe(value: string): string {
+  return value.replace(/[\r\n"<>]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** The fetched pages, framed so the model can only cite what it was actually shown. */
+export function formatSourcesBlock(sources: ResearchSource[]): string {
+  if (sources.length === 0) {
+    return "No sources could be fetched for this topic. Work from your own knowledge: omit sourceUrl and sourceTitle on every fact, set verified to false, and prefer facts you are confident are real.";
+  }
+  const entries = sources.map((source, index) =>
+    `<source index="${index + 1}" url="${attributeSafe(source.url)}" title="${attributeSafe(source.title)}">\n${source.excerpt}\n</source>`);
+  return `The following ${sources.length} source${sources.length === 1 ? "" : "s"} were fetched for this topic. They are the ONLY material a fact may cite; copy the url attribute exactly into sourceUrl.\n<sources>\n${entries.join("\n")}\n</sources>`;
+}
+
+function normalizeUrl(url: string): string {
+  return url.trim().replace(/#.*$/, "").replace(/\/+$/, "").toLowerCase();
+}
+
+/**
+ * Keeps a citation only when it points at a fetched source. The prompt says
+ * the same thing, but the model's word is not a guarantee, and a fabricated
+ * source shipped as grounded research is the failure this pass exists to
+ * prevent.
+ */
+export function enforceSourceCitations(facts: GroundedFact[], sources: ResearchSource[]): GroundedFact[] {
+  const byUrl = new Map(sources.map(source => [normalizeUrl(source.url), source]));
+  return facts.map((fact) => {
+    const source = fact.sourceUrl ? byUrl.get(normalizeUrl(fact.sourceUrl)) : undefined;
+    const { sourceUrl: _url, sourceTitle: _title, ...rest } = fact;
+    if (!source) {
+      return { ...rest, verified: false };
+    }
+    return { ...rest, sourceUrl: source.url, sourceTitle: fact.sourceTitle ?? source.title, verified: true };
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Pass 1 Main Runner
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -361,8 +393,7 @@ export async function runPass1Research(
     };
   }
 
-  const client = getClient();
-  if (!client) {
+  if (!resolveGmiKey()) {
     // The mock brief invents its own sources. That is a fine offline convenience
     // for local development, but on a deployment that requires visitor keys it
     // would hand someone a fabricated show labelled as grounded research.
@@ -370,6 +401,9 @@ export async function runPass1Research(
   }
 
   const enableSearch = input.options?.enableSearch !== false;
+  const sources = enableSearch ? await gatherSources(input.topic) : [];
+  const searchQuery = extractTopicUrl(input.topic) ?? toSearchQuery(input.topic);
+
   const userPrompt = `TOPIC TO INVESTIGATE: "${input.topic}"
 TOPIC TYPE: ${input.topicType ?? "custom"}
 FAMILIARITY LEVEL: ${input.familiarity ?? "familiar"}
@@ -378,102 +412,54 @@ HOST PERSONAS: ${input.showSkill?.hosts.map(h => `${h.name} (${h.role})`).join("
 ${input.userProfile?.humorPreference ? `USER HUMOR PREFERENCE: ${input.userProfile.humorPreference}` : ""}
 ${input.userProfile?.trackedInterests?.length ? `USER INTERESTS: ${input.userProfile.trackedInterests.join(", ")}` : ""}
 
-Generate a comprehensive ResearchBrief JSON with verified facts, bizarre stats, incongruity seeds, and 3-5 premise angles with 3-step escalation ladders.`;
+${formatSourcesBlock(sources)}
 
-  try {
-    const response = await client.models.generateContent({
-      model: "gemini-3.7-flash",
-      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-      config: {
-        systemInstruction: PASS1_SYSTEM_INSTRUCTION,
-        temperature: input.options?.temperature ?? 0.75,
-        // Large grounded ResearchBrief; 8192 truncated it mid-JSON and silently
-        // fell back to the mock. googleSearch is incompatible with responseMimeType.
-        maxOutputTokens: 65536,
-        thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
-        ...(enableSearch ? { tools: [{ googleSearch: {} }] } : {}),
-      },
-    });
+Generate a comprehensive ResearchBrief JSON with grounded facts, bizarre stats, incongruity seeds, and 3-5 premise angles with 3-step escalation ladders.`;
 
-    const rawText = response.text;
-    if (!rawText) {
-      throw new Error("Gemini returned empty text for Pass 1 research");
-    }
+  // Not degrading to the mock brief on failure. It fabricates example.com
+  // sources and reports them as grounded research, so a silent fallback ships
+  // an invented episode that looks successful. Failing is the honest outcome.
+  const draft = await generateJson({
+    schema: ResearchBriefDraftSchema,
+    label: "pass1-research",
+    system: PASS1_SYSTEM_INSTRUCTION,
+    prompt: userPrompt,
+    temperature: input.options?.temperature ?? 0.75,
+    // A grounded brief is large; a smaller budget truncated it mid-JSON.
+    maxOutputTokens: 65536,
+  });
 
-    // Extract JSON from response (handling potential markdown code blocks)
-    let parsedJson: unknown;
-    try {
-      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error("No JSON object found in Gemini Pass 1 response");
-      }
-      parsedJson = JSON.parse(jsonMatch[0]);
-    } catch (parseError) {
-      throw new Error(
-        `Research returned no parseable JSON. ${parseError instanceof Error ? parseError.message : String(parseError)}`,
-      );
-    }
+  const premiseAngles = draft.premiseAngles as ComedicPremiseAngle[];
+  const selectedAngle = premiseAngles.find(a => a.id === draft.selectedAngleId) ?? premiseAngles[0];
 
-    // Extract search grounding metadata from candidate if present
-    const candidate = response.candidates?.[0];
-    const groundingMetadata = candidate?.groundingMetadata;
-    const searchQueriesUsed = groundingMetadata?.webSearchQueries ?? [];
-    const groundingSources: Array<{ title: string; url: string }> = [];
+  const searchMetadata: SearchGroundingMetadata = {
+    // "enabled" reports what actually grounded the brief, not what was asked
+    // for: with nothing fetched the model wrote from its own knowledge.
+    enabled: sources.length > 0,
+    searchQueriesUsed: enableSearch ? [searchQuery] : [],
+    groundingSources: sources.map(source => ({ title: source.title, url: source.url })),
+    groundingChunkCount: sources.length,
+  };
 
-    if (groundingMetadata?.groundingChunks) {
-      for (const chunk of groundingMetadata.groundingChunks) {
-        if (chunk.web?.uri) {
-          groundingSources.push({
-            title: chunk.web.title ?? "Source Web Link",
-            url: chunk.web.uri,
-          });
-        }
-      }
-    }
+  const brief: ResearchBrief = ResearchBriefSchema.parse({
+    topic: input.topic,
+    topicType: input.topicType ?? "custom",
+    summary: draft.summary,
+    groundedFacts: enforceSourceCitations(draft.groundedFacts as GroundedFact[], sources),
+    incongruitySeeds: draft.incongruitySeeds,
+    premiseAngles,
+    selectedAngleId: selectedAngle.id,
+    selectedAngle,
+    searchMetadata,
+    familiarityLevel: input.familiarity ?? "familiar",
+    generatedAt: new Date().toISOString(),
+    isMocked: false,
+  }) as ResearchBrief;
 
-    const typedData = parsedJson as Record<string, unknown>;
-
-    // Ensure searchMetadata is populated
-    typedData.searchMetadata = {
-      enabled: enableSearch,
-      searchQueriesUsed,
-      groundingSources,
-      groundingChunkCount: groundingSources.length,
-    };
-
-    typedData.topic = input.topic;
-    typedData.topicType = input.topicType ?? "custom";
-    typedData.familiarityLevel = input.familiarity ?? "familiar";
-    typedData.generatedAt = new Date().toISOString();
-    typedData.isMocked = false;
-
-    // Validate selectedAngle exists
-    const premiseAngles = (typedData.premiseAngles as ComedicPremiseAngle[]) || [];
-    let selectedAngleId = (typedData.selectedAngleId as string) || (premiseAngles[0]?.id ?? "angle-1");
-    let selectedAngle = premiseAngles.find(a => a.id === selectedAngleId);
-
-    if (!selectedAngle && premiseAngles.length > 0) {
-      selectedAngle = premiseAngles[0];
-      selectedAngleId = selectedAngle.id;
-    }
-
-    typedData.selectedAngleId = selectedAngleId;
-    typedData.selectedAngle = selectedAngle;
-
-    // Validate with Zod schema
-    const validatedBrief = ResearchBriefSchema.parse(typedData) as ResearchBrief;
-
-    return {
-      brief: validatedBrief,
-      selectedAngle: validatedBrief.selectedAngle,
-      isMocked: false,
-      latencyMs: Date.now() - startTime,
-      rawResponse: rawText,
-    };
-  } catch (error) {
-    // Deliberately not degrading to the mock brief. It fabricates example.com
-    // sources and reports them as grounded research, so a silent fallback ships
-    // an invented episode that looks successful. Failing is the honest outcome.
-    throw error instanceof Error ? error : new Error(String(error));
-  }
+  return {
+    brief,
+    selectedAngle: brief.selectedAngle,
+    isMocked: false,
+    latencyMs: Date.now() - startTime,
+  };
 }

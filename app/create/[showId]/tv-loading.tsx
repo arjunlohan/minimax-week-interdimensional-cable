@@ -7,21 +7,25 @@ interface TVLoadingProps {
   isAudio?: boolean;
 }
 
+/** One line per `generated_shows.status`, naming the engine at work. */
 const STATUS_MESSAGES: Record<string, string> = {
   pending: "Warming up...",
-  researching: "Deep-diving into the topic...",
-  scripting: "Writing the script...",
-  generating: "Generating video clips...",
-  stitching: "Stitching clips together...",
+  researching: "MiniMax-M3 is researching the topic...",
+  scripting: "MiniMax-M3 is writing the script...",
+  voicing: "Speech 2.8 HD is recording the hosts...",
+  generating: "MiniMax-H3 is generating the clips...",
+  scoring: "Music 3.0 is scoring the theme and credits...",
+  stitching: "FFmpeg is cutting the episode together...",
   uploading: "Uploading to Mux...",
   ready: "Your show is ready!",
   failed: "Something went wrong.",
 };
 
+/** Audio episodes have no clips: the hosts perform the whole thing. */
 const AUDIO_STATUS_MESSAGES: Record<string, string> = {
   ...STATUS_MESSAGES,
-  generating: "Synthesizing audio...",
-  stitching: "Assembling audio track...",
+  voicing: "Speech 2.8 HD is recording the episode...",
+  stitching: "FFmpeg is assembling the episode...",
 };
 
 export function TVLoading({ templateName, topic, status, isAudio = false }: TVLoadingProps) {

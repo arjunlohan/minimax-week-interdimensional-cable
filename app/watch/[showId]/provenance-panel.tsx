@@ -4,7 +4,8 @@
  * Deliberately driven by the show's own record rather than a static list: the
  * counts below are read off the stored research brief and transcript, so the
  * panel cannot claim work that did not happen. A show generated without
- * grounding shows no grounded sources.
+ * grounding shows no grounded sources, and a show without a score shows no
+ * Music 3.0 row.
  */
 
 interface ProvenanceFact {
@@ -24,10 +25,13 @@ interface ProvenancePanelProps {
   isAudio: boolean;
   hasMux: boolean;
   language: string;
+  /** Music 3.0 was asked for a theme under the title card. */
+  hasTheme?: boolean;
+  /** Music 3.0 was asked for a sung end-credits recap. */
+  hasCredits?: boolean;
 }
 
-const VERTEX_ICON = "/google/vertex-ai.svg";
-const CLOUD_SQL_ICON = "/google/cloud-sql.svg";
+const MINIMAX_ICON = "/brand/minimax.svg";
 
 function parseBrief(raw: string | null): ProvenanceBrief | null {
   if (!raw) {
@@ -55,50 +59,65 @@ export function ProvenancePanel({
   isAudio,
   hasMux,
   language,
+  hasTheme = false,
+  hasCredits = false,
 }: ProvenancePanelProps) {
   const brief = parseBrief(researchContext);
   const facts = brief?.groundedFacts ?? [];
   const sourced = facts.filter(f => f.sourceUrl).length;
   const queries = brief?.searchMetadata?.searchQueriesUsed ?? [];
 
+  const scoreParts = [
+    hasTheme ? "theme under the title card" : null,
+    hasCredits ? "sung end-credits recap" : null,
+  ].filter((part): part is string => part !== null);
+
   const rows: Row[] = [
     {
       stage: "Research",
-      engine: "Gemini 3.7 Flash",
-      icon: VERTEX_ICON,
-      service: "Vertex AI",
+      engine: "MiniMax-M3",
+      icon: MINIMAX_ICON,
+      service: "GMI Cloud",
       detail: facts.length > 0 ?
-        `${facts.length} grounded fact${facts.length === 1 ? "" : "s"}${sourced > 0 ? `, ${sourced} with a live source` : ""}${queries.length > 0 ? ` from ${queries.length} search quer${queries.length === 1 ? "y" : "ies"}` : ""}` :
+        `${facts.length} grounded fact${facts.length === 1 ? "" : "s"}${sourced > 0 ? `, ${sourced} with a cited source` : ""}${queries.length > 0 ? ` from ${queries.length} research quer${queries.length === 1 ? "y" : "ies"}` : ""}` :
         "No stored research brief for this episode",
     },
     {
       stage: "Script",
-      engine: "Gemini 3.7 Flash",
-      icon: VERTEX_ICON,
-      service: "Vertex AI",
+      engine: "MiniMax-M3",
+      icon: MINIMAX_ICON,
+      service: "GMI Cloud",
       detail: `${segmentCount} beat${segmentCount === 1 ? "" : "s"} across three passes: research, head writer, voice`,
     },
     isAudio ?
         {
           stage: "Voices",
-          engine: "Gemini 3.1 Flash TTS",
-          icon: VERTEX_ICON,
-          service: "Vertex AI",
-          detail: `Multi-speaker synthesis, ${durationSeconds}s, ${language.toUpperCase()}`,
+          engine: "Speech 2.8 HD",
+          icon: MINIMAX_ICON,
+          service: "GMI Cloud",
+          detail: `One request per line in each host's voice, ${durationSeconds}s, ${language.toUpperCase()}`,
         } :
         {
           stage: "Video",
-          engine: "Veo 3.1",
-          icon: VERTEX_ICON,
-          service: "Vertex AI",
-          detail: `${segmentCount} clip${segmentCount === 1 ? "" : "s"} with boundary-frame chaining for face continuity`,
+          engine: "MiniMax-H3",
+          icon: MINIMAX_ICON,
+          service: "GMI Cloud",
+          detail: `${segmentCount} clip${segmentCount === 1 ? "" : "s"} of 4 to 15 s, each voiced by Speech 2.8 HD, stitched with ffmpeg`,
         },
+    ...(scoreParts.length > 0 ?
+        [{
+          stage: "Score",
+          engine: "Music 3.0",
+          icon: MINIMAX_ICON,
+          service: "GMI Cloud",
+          detail: scoreParts.join(" and "),
+        }] :
+        []),
     {
       stage: "State",
-      engine: "PostgreSQL 16 + pgvector",
-      icon: CLOUD_SQL_ICON,
-      service: "Cloud SQL",
-      detail: "Transcript, memory and every step checkpoint",
+      engine: "PostgreSQL + full-text search",
+      service: "Postgres",
+      detail: "Transcript, memory, retrieval index and every step checkpoint",
     },
     {
       stage: "Delivery",

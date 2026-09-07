@@ -1,4 +1,3 @@
-import { Buffer } from "node:buffer";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -20,43 +19,37 @@ import {
   updateMemoryFromInteraction,
 } from "./memory-bank";
 import { cleanupTempFiles, extractFrame, stitchClips } from "./stitch";
-import { encodePcmToWav, generateShowAudio, generateSingleVoiceClip, generateTts, voiceForHost } from "./tts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mocks for External Dependencies & Database
 // ─────────────────────────────────────────────────────────────────────────────
 
-const { mockGenerateContent, mockSearchVideoChunks } = vi.hoisted(() => ({
-  mockGenerateContent: vi.fn(),
+const { mockGenerateJson, mockGenerateText, mockSearchVideoChunks } = vi.hoisted(() => ({
+  mockGenerateJson: vi.fn(),
+  mockGenerateText: vi.fn(),
   mockSearchVideoChunks: vi.fn(),
 }));
 
 vi.mock("@/app/lib/env", () => ({
   env: {
-    GEMINI_API_KEY: "test-gemini-key",
-    GOOGLE_GENERATIVE_AI_API_KEY: "test-google-key",
+    GMI_CLOUD_APIKEY: "test-gmi-key",
     DATABASE_URL: "postgresql://localhost:5432/test",
   },
 }));
 
 vi.mock("./env", () => ({
   env: {
-    GEMINI_API_KEY: "test-gemini-key",
-    GOOGLE_GENERATIVE_AI_API_KEY: "test-google-key",
+    GMI_CLOUD_APIKEY: "test-gmi-key",
     DATABASE_URL: "postgresql://localhost:5432/test",
   },
 }));
 
-vi.mock("@google/genai", () => {
-  class MockGoogleGenAI {
-    models = {
-      generateContent: mockGenerateContent,
-    };
-  }
-  return {
-    GoogleGenAI: MockGoogleGenAI,
-  };
-});
+// The model boundary: the mock runs the module's own schema over a raw reply
+// object, which is what generateJson does after extracting the JSON.
+vi.mock("@/app/lib/gmi/text", () => ({
+  generateJson: mockGenerateJson,
+  generateText: mockGenerateText,
+}));
 
 vi.mock("@/db/search", () => ({
   searchVideoChunks: mockSearchVideoChunks,
@@ -65,6 +58,10 @@ vi.mock("@/db/search", () => ({
 vi.mock("node:child_process", () => ({
   execFile: vi.fn(),
 }));
+
+function queueModelReply(reply: unknown) {
+  mockGenerateJson.mockImplementationOnce(async ({ schema }: { schema: { parse: (v: unknown) => unknown } }) => schema.parse(reply));
+}
 
 let mockDbMemories: any[] = [];
 let mockDbChatMessages: any[] = [];
@@ -148,18 +145,6 @@ vi.mock("drizzle-orm/node-postgres", () => ({
 }));
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Format Checker Helper matching workflows/generate-show.ts checkShowFormatStep
-// ─────────────────────────────────────────────────────────────────────────────
-
-function checkShowFormat(durationSeconds: number | null | undefined): { isAudioPodcast: boolean; durationSeconds: number } {
-  const duration = durationSeconds ?? 16;
-  return {
-    isAudioPodcast: duration > 40,
-    durationSeconds: duration,
-  };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Empirical Challenger Test Suite for M3 & M4 Deliverables
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -168,7 +153,8 @@ describe("m3/m4 empirical challenger: media engine & memory bank stress testing"
   const createdFiles: string[] = [];
 
   beforeEach(() => {
-    mockGenerateContent.mockReset();
+    mockGenerateJson.mockReset();
+    mockGenerateText.mockReset();
     mockSearchVideoChunks.mockReset();
     vi.mocked(execFile).mockReset();
     mockDbMemories = [];
@@ -199,265 +185,7 @@ describe("m3/m4 empirical challenger: media engine & memory bank stress testing"
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // Section 1: Media Engine 40s Duration Validation Boundaries
-  // ═══════════════════════════════════════════════════════════════════════════
-  describe("media engine: 40s duration validation boundaries", () => {
-    it("permits exact 40s duration as a Video Show (Veo 3.1) and NOT an audio podcast", () => {
-      const format40 = checkShowFormat(40);
-      expect(format40.isAudioPodcast).toBe(false);
-      expect(format40.durationSeconds).toBe(40);
-    });
-
-    it("strictly routes 41s duration to Audio Podcast (Gemini 3.1 Flash TTS)", () => {
-      const format41 = checkShowFormat(41);
-      expect(format41.isAudioPodcast).toBe(true);
-      expect(format41.durationSeconds).toBe(41);
-    });
-
-    it("evaluates fractional sub-second boundaries (40.0s vs 40.001s)", () => {
-      const format40Exact = checkShowFormat(40.0);
-      expect(format40Exact.isAudioPodcast).toBe(false);
-
-      const format40Epsilon = checkShowFormat(40.001);
-      expect(format40Epsilon.isAudioPodcast).toBe(true);
-    });
-
-    it("handles lower boundary spectrum (0s, 8s, 16s, 24s, 32s, 40s) as Video Shows", () => {
-      const videoDurations = [0, 8, 16, 24, 32, 40];
-      for (const d of videoDurations) {
-        const result = checkShowFormat(d);
-        expect(result.isAudioPodcast).toBe(false);
-        expect(result.durationSeconds).toBe(d);
-      }
-    });
-
-    it("handles upper boundary spectrum (48s, 60s, 120s, 180s, 240s, 300s) as Audio Podcasts", () => {
-      const podcastDurations = [48, 60, 120, 180, 240, 300];
-      for (const d of podcastDurations) {
-        const result = checkShowFormat(d);
-        expect(result.isAudioPodcast).toBe(true);
-        expect(result.durationSeconds).toBe(d);
-      }
-    });
-
-    it("falls back to default 16s Video Show when duration is null or undefined", () => {
-      expect(checkShowFormat(null)).toEqual({ isAudioPodcast: false, durationSeconds: 16 });
-      expect(checkShowFormat(undefined)).toEqual({ isAudioPodcast: false, durationSeconds: 16 });
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Section 2: Multi-Speaker Dialogue Formatting & Host Voice Mappings
-  // ═══════════════════════════════════════════════════════════════════════════
-  describe("media engine: multi-speaker dialogue formatting with custom object hosts vs string hosts", () => {
-    it("correctly resolves voiceForHost across string names, explicit ttsVoice, voice aliases, and fallback cycle", () => {
-      // Direct mapped names
-      expect(voiceForHost("John Oliver")).toBe("Charon");
-      expect(voiceForHost("Seth Meyers")).toBe("Orus");
-      expect(voiceForHost("Colin Jost")).toBe("Charon");
-      expect(voiceForHost("Michael Che")).toBe("Puck");
-
-      // Custom object hosts with explicit ttsVoice
-      expect(voiceForHost({ name: "Custom Theorist", ttsVoice: "Fenrir" })).toBe("Fenrir");
-      expect(voiceForHost({ name: "Guest Star", ttsVoice: "Aoede" })).toBe("Aoede");
-
-      // Custom object hosts with voice alias
-      expect(voiceForHost({ name: "Co-host", voice: "Enceladus" })).toBe("Enceladus");
-
-      // Custom object hosts with mapped name and no explicit voice
-      expect(voiceForHost({ name: "Seth Meyers" })).toBe("Orus");
-
-      // Custom object hosts with unknown name -> fallback cycle by index
-      expect(voiceForHost({ name: "Mysterious Guest" }, 0)).toBe("Charon");
-      expect(voiceForHost({ name: "Mysterious Guest" }, 1)).toBe("Orus");
-      expect(voiceForHost({ name: "Mysterious Guest" }, 2)).toBe("Puck");
-      expect(voiceForHost({ name: "Mysterious Guest" }, 3)).toBe("Fenrir");
-      expect(voiceForHost({ name: "Mysterious Guest" }, 4)).toBe("Aoede");
-      expect(voiceForHost({ name: "Mysterious Guest" }, 5)).toBe("Kore");
-      expect(voiceForHost({ name: "Mysterious Guest" }, 6)).toBe("Enceladus");
-      expect(voiceForHost({ name: "Mysterious Guest" }, 7)).toBe("Charon"); // wrapped
-    });
-
-    it("formats multi-speaker dialogue speechConfig correctly for a two-hander", async () => {
-      const fakePcmBase64 = Buffer.from([0x01, 0x02, 0x03, 0x04]).toString("base64");
-      mockGenerateContent.mockResolvedValueOnce({
-        candidates: [{
-          content: {
-            parts: [{ inlineData: { data: fakePcmBase64, mimeType: "audio/pcm" } }],
-          },
-        }],
-      });
-
-      const hosts = [
-        "John Oliver",
-        { name: "Speculative Host", ttsVoice: "Fenrir" },
-      ];
-
-      const transcript = "John: Look at this.\nSpeculative Host: Whoa!";
-      const wav = await generateTts(transcript, hosts as any);
-
-      expect(mockGenerateContent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          config: expect.objectContaining({
-            responseModalities: ["AUDIO"],
-            speechConfig: {
-              multiSpeakerVoiceConfig: {
-                speakerVoiceConfigs: [
-                  { speaker: "John Oliver", voiceConfig: { prebuiltVoiceConfig: { voiceName: "Charon" } } },
-                  { speaker: "Speculative Host", voiceConfig: { prebuiltVoiceConfig: { voiceName: "Fenrir" } } },
-                ],
-              },
-            },
-          }),
-          contents: [{ role: "user", parts: [{ text: transcript }] }],
-          model: "gemini-3.1-flash-tts-preview",
-        }),
-      );
-
-      expect(wav.length).toBe(48); // 44 header + 4 data
-    });
-
-    it("refuses a single multi-speaker call for a cast Gemini cannot voice", async () => {
-      // Three or more speakers is a 400 from the real API. Failing here, with a
-      // message naming the limit, beats surfacing an opaque upstream error.
-      const hosts = [
-        "John Oliver",
-        { name: "Speculative Host" },
-        { name: "Sidekick" },
-        { name: "Unmapped Guest" },
-      ];
-
-      await expect(generateTts("A: x\nB: y", hosts as any)).rejects.toThrow(
-        /at most 2 speakers per call, got 4/,
-      );
-      expect(mockGenerateContent).not.toHaveBeenCalled();
-    });
-
-    it("voices a four-handed panel one turn at a time, each in its own voice", async () => {
-      const pcmFor = (byte: number) => Buffer.from([byte, byte]).toString("base64");
-      for (let i = 0; i < 4; i++) {
-        mockGenerateContent.mockResolvedValueOnce({
-          candidates: [{
-            content: { parts: [{ inlineData: { data: pcmFor(i + 1), mimeType: "audio/pcm" } }] },
-          }],
-        });
-      }
-
-      const hosts = [
-        { name: "Chamath Capitalia", ttsVoice: "Charon" },
-        { name: "Jason Calamaris", ttsVoice: "Puck" },
-        { name: "David Stacks", ttsVoice: "Orus" },
-        { name: "David Friedegg", ttsVoice: "Fenrir" },
-      ];
-      const segments = [
-        { speaker: "Chamath Capitalia", text: "Structurally, this was always going to happen." },
-        { speaker: "Jason Calamaris", text: "Can I finish?" },
-        { speaker: "David Stacks", text: "That's just not what the data says." },
-        { speaker: "David Friedegg", text: "Zoom out for a second." },
-      ];
-
-      const wav = await generateShowAudio("full transcript", hosts as any, segments);
-
-      // One call per turn, not one call for the show.
-      expect(mockGenerateContent).toHaveBeenCalledTimes(4);
-
-      // Each turn goes out as a single-speaker request in that host's voice.
-      const voicesUsed = mockGenerateContent.mock.calls.map(
-        (c: any) => c[0].config.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName,
-      );
-      expect(voicesUsed).toEqual(["Charon", "Puck", "Orus", "Fenrir"]);
-
-      // 44-byte header + 2 bytes of PCM per turn.
-      expect(wav.length).toBe(44 + 8);
-    });
-
-    it("generates single-speaker voice clip data URI with custom object host", async () => {
-      const fakePcmBase64 = Buffer.from([0xAA, 0xBB]).toString("base64");
-      mockGenerateContent.mockResolvedValueOnce({
-        candidates: [{
-          content: {
-            parts: [{ inlineData: { data: fakePcmBase64, mimeType: "audio/pcm" } }],
-          },
-        }],
-      });
-
-      const dataUri = await generateSingleVoiceClip("Quick aside!", { name: "Theorist", ttsVoice: "Kore" });
-
-      expect(dataUri.startsWith("data:audio/wav;base64,")).toBe(true);
-      expect(mockGenerateContent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          config: expect.objectContaining({
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: "Kore" },
-              },
-            },
-          }),
-        }),
-      );
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Section 3: WAV Encoding Buffer Sizes & RIFF Header Integrity
-  // ═══════════════════════════════════════════════════════════════════════════
-  describe("media engine: WAV encoding buffer sizes & RIFF header validation", () => {
-    it("encodes 0-byte PCM buffer into valid 44-byte WAV with zero data size", () => {
-      const emptyBuffer = Buffer.alloc(0);
-      const wav = encodePcmToWav(emptyBuffer);
-
-      expect(wav.length).toBe(44);
-      expect(wav.toString("ascii", 0, 4)).toBe("RIFF");
-      expect(wav.readUInt32LE(4)).toBe(36); // 44 - 8
-      expect(wav.toString("ascii", 8, 12)).toBe("WAVE");
-      expect(wav.toString("ascii", 12, 16)).toBe("fmt ");
-      expect(wav.readUInt32LE(16)).toBe(16); // Subchunk1Size
-      expect(wav.readUInt16LE(20)).toBe(1); // AudioFormat = PCM
-      expect(wav.readUInt16LE(22)).toBe(1); // NumChannels = 1 (Mono)
-      expect(wav.readUInt32LE(24)).toBe(24000); // SampleRate = 24kHz
-      expect(wav.readUInt32LE(28)).toBe(48000); // ByteRate = 24000 * 1 * (16/8)
-      expect(wav.readUInt16LE(32)).toBe(2); // BlockAlign = 2
-      expect(wav.readUInt16LE(34)).toBe(16); // BitsPerSample = 16
-      expect(wav.toString("ascii", 36, 40)).toBe("data");
-      expect(wav.readUInt32LE(40)).toBe(0); // DataSize = 0
-    });
-
-    it("encodes 1-second of 24 kHz 16-bit mono audio (48,000 bytes) with exact mathematics", () => {
-      const oneSecPcm = Buffer.alloc(48000, 0x7F);
-      const wav = encodePcmToWav(oneSecPcm);
-
-      expect(wav.length).toBe(48044);
-      expect(wav.readUInt32LE(4)).toBe(48000 + 44 - 8);
-      expect(wav.readUInt32LE(40)).toBe(48000);
-      expect(wav.subarray(44)).toEqual(oneSecPcm);
-    });
-
-    it("encodes a large 5-minute podcast audio buffer (14.4 MB) without 32-bit integer overflow", () => {
-      // 5 min = 300 seconds * 24000 samples/sec * 2 bytes/sample = 14,400,000 bytes
-      const fiveMinBytes = 300 * 48000;
-      const largePcm = Buffer.alloc(fiveMinBytes, 0x11);
-      const wav = encodePcmToWav(largePcm);
-
-      expect(wav.length).toBe(fiveMinBytes + 44);
-      expect(wav.readUInt32LE(4)).toBe(fiveMinBytes + 36);
-      expect(wav.readUInt32LE(40)).toBe(fiveMinBytes);
-      expect(wav.readUInt32LE(24)).toBe(24000);
-      expect(wav.readUInt32LE(28)).toBe(48000);
-      expect(wav.subarray(44, 48)).toEqual(Buffer.from([0x11, 0x11, 0x11, 0x11]));
-    });
-
-    it("encodes odd-length byte buffers safely", () => {
-      const oddPcm = Buffer.from([0x01, 0x02, 0x03]);
-      const wav = encodePcmToWav(oddPcm);
-
-      expect(wav.length).toBe(47);
-      expect(wav.readUInt32LE(4)).toBe(39);
-      expect(wav.readUInt32LE(40)).toBe(3);
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Section 4: 48 kHz Normalization Flags & Broadcast Stitching
+  // Section 1: 48 kHz Normalization Flags & Broadcast Stitching
   // ═══════════════════════════════════════════════════════════════════════════
   describe("media engine: 48 kHz normalization flags & broadcast stitching", () => {
     it("enforces 48 kHz broadcast audio sample rate (-ar 48000) during ffmpeg fallback re-encode", async () => {
@@ -545,7 +273,7 @@ describe("m3/m4 empirical challenger: media engine & memory bank stress testing"
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // Section 5: Memory Bank Mastery Decay Formulas at 0, 15, 30, 60 Days
+  // Section 2: Memory Bank Mastery Decay Formulas at 0, 15, 30, 60 Days
   // ═══════════════════════════════════════════════════════════════════════════
   describe("memory bank: mastery decay formulas across time intervals", () => {
     it("evaluates Ebbinghaus decay formula C(t) = C_0 * 2^(-t / t_half) exactly at 0, 15, 30, 60 days for C_0 = 1.0", () => {
@@ -611,7 +339,7 @@ describe("m3/m4 empirical challenger: media engine & memory bank stress testing"
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // Section 6: Mastery Boost Bounds (0.0 <= m <= 1.0) Under Stress
+  // Section 3: Mastery Boost Bounds (0.0 <= m <= 1.0) Under Stress
   // ═══════════════════════════════════════════════════════════════════════════
   describe("memory bank: boost bounds and mathematical stability", () => {
     it("satisfies 0.0 <= C_new <= 1.0 for all standard inputs with alpha = 0.30", () => {
@@ -661,7 +389,7 @@ describe("m3/m4 empirical challenger: media engine & memory bank stress testing"
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // Section 7: Missing Profile Fallbacks & Robustness
+  // Section 4: Missing Profile Fallbacks & Robustness
   // ═══════════════════════════════════════════════════════════════════════════
   describe("memory bank: missing profile fallbacks & edge cases", () => {
     it("returns clean default structure when user has no stored memories", async () => {
@@ -699,7 +427,7 @@ describe("m3/m4 empirical challenger: media engine & memory bank stress testing"
       expect(await getSemanticMemory("")).toEqual([]);
       expect(await getSemanticMemory("   ")).toEqual([]);
 
-      mockSearchVideoChunks.mockRejectedValueOnce(new Error("pgvector connection timeout"));
+      mockSearchVideoChunks.mockRejectedValueOnce(new Error("full-text search connection timeout"));
       const fallbackResult = await getSemanticMemory("quantum computing");
       expect(fallbackResult).toEqual([]);
     });
@@ -717,7 +445,7 @@ describe("m3/m4 empirical challenger: media engine & memory bank stress testing"
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // Section 8: Prompt Injection Safety & Sanitization in Memory Bank
+  // Section 5: Prompt Injection Safety & Sanitization in Memory Bank
   // ═══════════════════════════════════════════════════════════════════════════
   describe("memory bank: prompt injection safety in user-provided memories", () => {
     it("encapsulates adversarial injection strings in prompt block within clear delimiters", async () => {
@@ -760,53 +488,29 @@ describe("m3/m4 empirical challenger: media engine & memory bank stress testing"
       expect(promptContext).toContain("Instruction: Adapt your explanation depth, humor, and analogies to resonate with these learned preferences without explicitly mentioning this memory bank.");
     });
 
-    it("resiliently sanitizes extraction LLM responses containing code fences and malformed JSON payloads", async () => {
-      // Simulating a model outputting code fences and extra text
-      mockGenerateContent.mockResolvedValueOnce({
-        candidates: [{
-          content: {
-            parts: [{
-              text: "```json\n{\n  \"memories\": [\n    {\n      \"memoryType\": \"concept_mastery\",\n      \"key\": \"ai-safety\",\n      \"value\": \"Understands prompt injections\",\n      \"confidence\": 0.9\n    }\n  ]\n}\n```",
-            }],
-          },
-        }],
-      });
-
-      await updateMemoryFromInteraction(
-        "user-safe",
-        "How do prompt injections work?",
-        "Prompt injections attempt to override model instructions.",
-        "AI Safety",
-      );
-
-      expect(mockInsertCalls.length).toBe(1);
-      expect(mockInsertCalls[0].key).toBe("ai-safety");
-      expect(mockInsertCalls[0].value).toBe("Understands prompt injections");
-      expect(mockInsertCalls[0].confidence).toBe(0.9);
-    });
-
     it("discards adversarial or malformed memory items lacking valid keys or memory types", async () => {
-      mockGenerateContent.mockResolvedValueOnce({
-        candidates: [{
-          content: {
-            parts: [{
-              text: JSON.stringify({
-                memories: [
-                  { key: null, value: "hacked", memoryType: "concept_mastery" },
-                  { key: "", value: "empty key", memoryType: "interest_topic" },
-                  { key: "valid-topic", value: "clean value", memoryType: "interest_topic" },
-                  { key: "missing-type", value: "val" }, // no memoryType
-                ],
-              }),
-            }],
-          },
-        }],
+      queueModelReply({
+        memories: [
+          { key: null, value: "hacked", memoryType: "concept_mastery" },
+          { key: "", value: "empty key", memoryType: "interest_topic" },
+          { key: "valid-topic", value: "clean value", memoryType: "interest_topic" },
+          { key: "missing-type", value: "val" }, // no memoryType
+          { key: "made-up-type", value: "val", memoryType: "system_override" },
+        ],
       });
 
       await updateMemoryFromInteraction("user-test-adversarial", "msg", "resp", "topic");
 
       expect(mockInsertCalls.length).toBe(1);
       expect(mockInsertCalls[0].key).toBe("valid-topic");
+    });
+
+    it("never lets an extraction failure escape into the action that triggered it", async () => {
+      mockGenerateJson.mockRejectedValueOnce(new Error("MiniMax-M3 returned an empty response (finishReason: length)"));
+
+      await expect(updateMemoryFromInteraction("user-fail", "msg", "resp", "topic")).resolves.toBeUndefined();
+      expect(mockInsertCalls.length).toBe(0);
+      expect(mockUpdateCalls.length).toBe(0);
     });
   });
 });

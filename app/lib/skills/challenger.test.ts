@@ -5,9 +5,9 @@ import { calculateClipWordBudgets } from "./archetype-a";
 import { closerLookSkill } from "./closer-look";
 import { dbTemplateToSkill, getAllSkillsAsDbTemplates, skillToDbTemplate } from "./db-adapter";
 import {
-  assertLicensedGeminiVoice,
+  assertLicensedMinimaxVoice,
   generateSatiricalDisclaimer,
-  LICENSED_GEMINI_TTS_VOICES,
+  LICENSED_MINIMAX_TTS_VOICES,
   sanitizePromptForLegalSafety,
   validateSkillLegalGuardrails,
 } from "./guardrails";
@@ -62,8 +62,9 @@ describe("m1 empirical challenger: stress-testing Show SKILL engine", () => {
         "ElevenLabs_Rachel",
         "CustomVoice_1",
         "",
-        "charon", // lowercase
-        "ORUS", // uppercase
+        "english_magnetic_voiced_man", // lowercase
+        "ENGLISH_PERSUASIVE_MAN", // uppercase
+        "Charon", // pre-migration name: the adapter resolves it, the schema does not accept it
       ];
 
       for (const invalidVoice of invalidVoices) {
@@ -80,7 +81,7 @@ describe("m1 empirical challenger: stress-testing Show SKILL engine", () => {
     });
 
     it("accepts all valid licensed voice identifiers in HostSkillConfigSchema", () => {
-      for (const voice of LICENSED_GEMINI_TTS_VOICES) {
+      for (const voice of LICENSED_MINIMAX_TTS_VOICES) {
         const result = HostSkillConfigSchema.safeParse({
           name: "Test Host",
           role: "anchor",
@@ -108,7 +109,7 @@ describe("m1 empirical challenger: stress-testing Show SKILL engine", () => {
         name: "Test Host",
         role: "anchor" as const,
         position: "center" as const,
-        ttsVoice: "Charon" as const,
+        ttsVoice: "English_magnetic_voiced_man" as const,
         personaCraft: "Valid persona craft text over fifteen characters.",
       };
 
@@ -359,16 +360,16 @@ describe("m1 empirical challenger: stress-testing Show SKILL engine", () => {
       expect(validateSkillLegalGuardrails(shortCraftSkill).valid).toBe(false);
     });
 
-    it("assertLicensedGeminiVoice behavior", () => {
-      expect(() => assertLicensedGeminiVoice("Charon")).not.toThrow();
-      expect(() => assertLicensedGeminiVoice("Orus")).not.toThrow();
-      expect(() => assertLicensedGeminiVoice("Puck")).not.toThrow();
-      expect(() => assertLicensedGeminiVoice("Fenrir")).not.toThrow();
-      expect(() => assertLicensedGeminiVoice("Aoede")).not.toThrow();
-      expect(() => assertLicensedGeminiVoice("Kore")).not.toThrow();
-      expect(() => assertLicensedGeminiVoice("Enceladus")).not.toThrow();
+    it("assertLicensedMinimaxVoice behavior", () => {
+      expect(() => assertLicensedMinimaxVoice("English_magnetic_voiced_man")).not.toThrow();
+      expect(() => assertLicensedMinimaxVoice("English_Persuasive_Man")).not.toThrow();
+      expect(() => assertLicensedMinimaxVoice("English_Trustworth_Man")).not.toThrow();
+      expect(() => assertLicensedMinimaxVoice("English_Aussie_Bloke")).not.toThrow();
+      expect(() => assertLicensedMinimaxVoice("English_Upbeat_Woman")).not.toThrow();
+      expect(() => assertLicensedMinimaxVoice("English_Graceful_Lady")).not.toThrow();
+      expect(() => assertLicensedMinimaxVoice("English_expressive_narrator")).not.toThrow();
 
-      expect(() => assertLicensedGeminiVoice("BannedVoice", "TestHost")).toThrowError(
+      expect(() => assertLicensedMinimaxVoice("BannedVoice", "TestHost")).toThrowError(
         /Illegal or unlicensed TTS voice "BannedVoice" for host "TestHost"/,
       );
     });
@@ -377,7 +378,7 @@ describe("m1 empirical challenger: stress-testing Show SKILL engine", () => {
       const disclaimer = generateSatiricalDisclaimer("My Satirical News", "Cryptocurrency Crashes");
       expect(disclaimer).toContain("Interdimensional Cable AI Comedy Orchestrator (My Satirical News on \"Cryptocurrency Crashes\")");
       expect(disclaimer).toContain("original satirical parody and comedic commentary");
-      expect(disclaimer).toContain("licensed Google Cloud Gemini TTS");
+      expect(disclaimer).toContain("licensed MiniMax Speech 2.8 HD");
       expect(disclaimer).toContain("Not affiliated with or endorsed by any living individual or network");
     });
   });

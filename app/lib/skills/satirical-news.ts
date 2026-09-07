@@ -43,7 +43,7 @@ export const satiricalNewsSkill: ShowSkill = {
       "Which makes you wonder...",
       "Back to you, Colin...",
     ],
-    ttsVoice: "Charon",
+    ttsVoice: "English_magnetic_voiced_man",
     acousticCuePreferences: ["[chuckles]", "[laughs]", "[deadpan]", "[snickers]"],
   },
   hosts: [
@@ -51,7 +51,7 @@ export const satiricalNewsSkill: ShowSkill = {
       name: "Colin Jest",
       role: "anchor",
       position: "left",
-      ttsVoice: "Charon",
+      ttsVoice: "English_magnetic_voiced_man",
       personaCraft:
         "Polished, straight-man anchor delivering deadpan setups with newsroom sincerity. Maintains composure through shocking punchlines and endures good-natured ribbing from his co-anchor.",
       personality:
@@ -63,7 +63,7 @@ export const satiricalNewsSkill: ShowSkill = {
       name: "Michael Chey",
       role: "anchor",
       position: "right",
-      ttsVoice: "Puck",
+      ttsVoice: "English_Persuasive_Man",
       personaCraft:
         "Relaxed, streetwise, subversive co-anchor. Delivers boundary-pushing jokes with casual conversational ease, chuckles at his own lines, and gives knowing side-eyes to the camera and his co-anchor.",
       personality:

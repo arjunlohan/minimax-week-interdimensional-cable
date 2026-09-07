@@ -1,6 +1,11 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import { GmiCloudWordmark } from "@/app/components/how-it-runs";
+
+const REPO_URL = "https://github.com/arjunlohan/minimax-week-interdimensional-cable";
+const TAGLINE = "AI-generated talk shows: pick a format, give it a topic, watch it render";
+
 interface FooterProps {
   /** Whether to show the full footer with "Built with" section or minimal */
   variant?: "full" | "minimal";
@@ -18,22 +23,38 @@ export function Footer({ variant = "minimal" }: FooterProps) {
           >
             Built with
           </p>
-          <div className="flex flex-wrap items-center justify-center gap-6">
-            {/* Google Gemini Logo */}
+          <div className="flex flex-wrap items-center justify-center gap-6 text-white">
+            {/* MiniMax mark */}
             <a
-              href="https://gemini.google.com/"
+              href="https://www.minimax.io/"
               target="_blank"
               rel="noreferrer"
-              aria-label="Google Gemini"
-              className="inline-flex items-center justify-center"
+              aria-label="MiniMax"
+              className="inline-flex items-center justify-center gap-2"
             >
               <Image
-                src="/gemini-logo-white.svg"
-                alt="Google Gemini"
-                width={120}
+                src="/brand/minimax.svg"
+                alt=""
+                width={24}
                 height={24}
-                style={{ height: "24px", width: "auto" }}
+                style={{ height: "24px", width: "24px" }}
               />
+              <span
+                className="text-sm font-bold tracking-wider"
+                style={{ fontFamily: "var(--font-space-mono)" }}
+              >
+                MiniMax
+              </span>
+            </a>
+            {/* GMI Cloud wordmark, filled with the footer's text colour */}
+            <a
+              href="https://www.gmicloud.ai/"
+              target="_blank"
+              rel="noreferrer"
+              aria-label="GMI Cloud"
+              className="inline-flex items-center justify-center"
+            >
+              <GmiCloudWordmark className="h-6 w-[74px]" />
             </a>
             {/* Mux Logo */}
             <a
@@ -69,7 +90,7 @@ export function Footer({ variant = "minimal" }: FooterProps) {
             </a>
             {/* GitHub Logo */}
             <a
-              href="https://github.com/muxinc/nextjs-video-ai-workflows"
+              href={REPO_URL}
               target="_blank"
               rel="noreferrer"
               aria-label="GitHub repository"
@@ -89,7 +110,7 @@ export function Footer({ variant = "minimal" }: FooterProps) {
             className="max-w-md text-xs leading-relaxed text-foreground-light/60"
             style={{ fontFamily: "var(--font-space-mono)" }}
           >
-            AI-generated talk shows — pick a format, give it a topic, watch it come to life
+            {TAGLINE}
           </p>
         </div>
       </footer>
@@ -105,14 +126,14 @@ export function Footer({ variant = "minimal" }: FooterProps) {
           className="text-xs tracking-widest text-foreground-light"
           style={{ fontFamily: "var(--font-space-mono)" }}
         >
-          AI-generated talk shows — pick a format, give it a topic, watch it come to life
+          {TAGLINE}
         </p>
         <div className="flex items-center gap-6">
           <Link href="/" className="text-xs text-foreground-light/60 hover:text-white">
             Home
           </Link>
           <a
-            href="https://github.com/arjunlohan/multimodal-frontier-hackathon-interdimensional-cable"
+            href={REPO_URL}
             target="_blank"
             rel="noreferrer"
             className="text-xs text-foreground-light/60 hover:text-white"

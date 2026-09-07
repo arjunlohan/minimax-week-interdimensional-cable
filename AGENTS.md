@@ -1,149 +1,131 @@
 # AGENTS.md
 
-Guidance for AI coding assistants working on this project.
+Guidance for AI coding assistants working on this project. `CLAUDE.md` carries the short version; this file carries the patterns and the code shapes.
 
 ---
 
 ## What this project is
 
-A **reference architecture** demonstrating how to integrate `@mux/ai` with **Vercel Workflows** to ship video intelligence that holds up at scale.
+**Interdimensional Cable** is an autonomous AI showrunner built for MiniMax Week × GMI Cloud (track: Synthesis). A visitor picks a late-night format and gives it a topic; a durable workflow researches it, writes it, performs every line, renders the host on camera, scores a theme, sings the credits and publishes the episode to Mux. Afterwards the host answers questions in character, a memory bank remembers the listener, and a coordinator script can choose the next episode from Hacker News.
 
-The app ("Demuxed Library") uses real Mux assets to teach three integration layers:
+Two rules shape every change:
 
-| Layer | Pattern    | Example                                                       |
-| ----- | ---------- | ------------------------------------------------------------- |
-| **1** | Primitives | `getSummaryAndTags()` — call primitives directly              |
-| **2** | Workflows  | `translateCaptions`, `translateAudio` — run workflows durably |
-| **3** | Connectors | Clip creation — compose with external tools like Remotion     |
+1. **Core generation runs on MiniMax models served through GMI Cloud.** Supporting infrastructure (Vercel Workflows, Postgres, Mux, FFmpeg) is fine and is named in the UI, never hidden.
+2. **Every model call goes through `app/lib/gmi/`.** No other provider, no model ids or GMI fetches elsewhere.
 
-**Read the full context:**
+The codebase started on 2026-08-29 for another event on a different model stack and was rebuilt on MiniMax during MiniMax Week (the README's provenance section names the original). The previous provider's SDK is gone; do not bring it back.
 
-- `context/application-explained.md` — what the app does and why
-- `context/design-explained.md` — visual design and UX patterns
-- `context/implementation-explained.md` — routes, data model, and code patterns
+**Read next:**
+
+- `context/application-explained.md`, `context/design-explained.md`, `context/implementation-explained.md`: the imported-talk features (`/media/[slug]`) that came with the original template and still exist as legacy layers.
+- `README.md`: the model map, the pipeline, the demo shot list.
+
+---
+
+## Model map
+
+| Model                                     | Id                                        | Role                                                                                                                                            | Module                                                             |
+| :---------------------------------------- | :---------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------- |
+| MiniMax-M3 (1M context)                   | `MiniMaxAI/MiniMax-M3` (`GMI_TEXT_MODEL`) | Research on fetched sources, three-pass writers' room, memory extraction, in-character chat and tangents, Taskmaster ranking, summaries, lyrics | `app/lib/gmi/text.ts` (Vercel AI SDK, `@ai-sdk/gmicloud`)          |
+| MiniMax-H3 (video, 4 to 15 s, 768P or 2K) | `MiniMax-H3`                              | Every clip of a video episode, reference-to-video. $0.13 per request, the only paid model.                                                      | `app/lib/gmi/video.ts`, guarded by `app/lib/gmi/spend.ts`          |
+| Speech 2.8 HD                             | `minimax-tts-speech-2.8-hd`               | One voice per line, emotion from the acting direction; podcasts; chat replies                                                                   | `app/lib/gmi/speech.ts`, `app/lib/tts.ts`, `app/lib/gmi/voices.ts` |
+| Music 3.0                                 | `minimax-music-3.0`                       | Theme hook and sung end credits per episode                                                                                                     | `app/lib/gmi/music.ts`, mixed by `app/lib/assemble.ts`             |
+| Voice clone 2.8 HD                        | `minimax-audio-voice-clone-speech-2.8-hd` | Optional, wired                                                                                                                                 | `app/lib/gmi/speech.ts` (`cloneVoiceAndSpeak`)                     |
+
+Two GMI Cloud surfaces, one key: an OpenAI-compatible LLM endpoint (M3, through the AI SDK provider) and a request queue (`console.gmicloud.ai/api/v1/ie/requestqueue`) for the media models. Media inputs (portraits, a line of audio) must be public URLs, which `app/lib/gmi/upload.ts` provides.
+
+---
+
+## The shared GMI layer
+
+```typescript
+import { generateH3Clip, generateJson, generateMusic, generateText, synthesizeSpeechWav } from "@/app/lib/gmi";
+```
+
+- **Text:** `generateText({ system, prompt | messages, maxOutputTokens, temperature })` returns the reply with M3's reasoning stripped. `generateJson({ schema, label, ... })` validates with Zod and runs one repair round that feeds the validation error back. Always use `generateJson` for structured output; never regex a JSON blob out of a reply elsewhere.
+- **Speech:** `synthesizeSpeech` (mp3) or `synthesizeSpeechWav` (24 kHz mono WAV, what the audio pipeline concatenates). One voice per request, so dialogue is synthesized a turn at a time. Emotions: `calm`, `happy`, `sad`, `angry`, `fearful`, `disgusted`, `surprised`.
+- **Video:** `generateH3Clip({ prompt, durationSeconds, referenceImageUrls, referenceAudioUrls, showId })`. Reference inputs and first/last-frame inputs cannot be mixed in one request; `buildH3Payload` enforces that and the 4 to 15 s window. `buildClipPrompt` composes the shot; `referencePortraitUrls` uploads the template portrait once per process.
+- **Music:** `generateMusic({ lyrics, prompt })`. Lyrics carry structure tags (`[Intro] [Verse] [Chorus] [Bridge] [Outro] [Hook] [Inst]`), the prompt carries genre and mood.
+- **Errors:** `GmiApiError` (HTTP), `GmiRequestFailedError` (queue), `GmiContentFilterError` (a refusal; revise and retry), `BudgetExceededError` (the spend guard), `MissingApiKeyError` (no key in scope).
+
+### Spend guard
+
+`generateH3Clip` calls `assertH3Budget(showId)` and writes a `gmi_spend` row on submission, before the request can succeed or fail. Caps: `H3_MAX_REQUESTS_PER_RUN` (default 14) per show, `H3_SESSION_CAP_USD` (default 8) for the whole database. Both refuse. `getH3SpendSummary()` is what the UI and the ledger read. Never issue an H3 request outside `generateH3Clip`.
+
+### Honesty rule
+
+No canned content for a failed model call. Concretely:
+
+- Research on a URL that cannot be fetched or is too short to read throws with the reason. It does not hand the model a bare URL.
+- An empty or truncated model reply throws with the finish reason. There is no mock brief, mock script, or sample transcript.
+- A refused clip may have its line rewritten by M3 and retried (at most twice). It is never replaced with a stock shot or a silent clip.
+- A failed step writes its reason to `generated_shows.error`; `markFailedStep` keeps a specific stored reason over a generic one.
+
+If you find yourself writing a fallback that produces plausible content without the model, stop: throw instead.
 
 ---
 
 ## Code style (ESLint)
 
-This project uses `@antfu/eslint-config` with custom rules dictated within `eslint.config.mjs`. Key points:
+`@antfu/eslint-config` with the rules in `eslint.config.mjs`:
 
-### Formatting
+- 2-space indent, semicolons always, double quotes, cuddled braces (`} else {`), operators at end of line.
+- Imports sorted by `perfectionist/sort-imports`: side-effect styles, built-ins, external, internal (`@mux/ai`), parent, sibling, index, then types. Blank lines between groups.
+- kebab-case file names (all-caps `.md` files excepted).
+- `console.log` warns. Prefix logs (`[gmi:speech]`, `[workflow:upload]`).
+- `node/no-process-env` is an error: read `env` from `app/lib/env.ts`.
+- No em dashes anywhere. Commas, colons, parentheses; a middot in labels ("Score · Music 3.0").
 
-- **Indent**: 2 spaces
-- **Semicolons**: always
-- **Quotes**: double quotes (`"`)
-- **Brace style**: cuddled (`} else {` on same line)
-- **Operators**: at end of line, not beginning
-
-### Import ordering
-
-Imports are sorted by the `perfectionist/sort-imports` rule:
-
-```typescript
-// 1. Side-effect styles
-import "./styles.css";
-
-// 2. Built-in modules
-import { Buffer } from "node:buffer";
-
-// 5. Parent/sibling/index
-import { env } from "@/lib/env";
-// 3. External packages
-import { z } from "zod";
-
-// 4. Internal (@mux/ai is treated as internal)
-import { getSummaryAndTags } from "@mux/ai/workflows";
-```
-
-**Blank lines between groups are required.**
-
-### File naming
-
-- **kebab-case** for all files (e.g., `translate-captions.ts`, not `translateCaptions.ts`)
-- Exception: `README.md` and other all-caps markdown files
-
-### Console usage
-
-- `console.log` triggers a warning — prefer structured logging or remove before committing
+Run `npx eslint --fix <files>` before finishing.
 
 ---
 
 ## Environment variables
 
-All env vars are validated at startup via `app/lib/env.ts` using Zod.
-
-### Required variables
+Validated at startup by `app/lib/env.ts` (Zod). `.env.example` mirrors it.
 
 ```bash
-# Mux credentials
+# Required
+GMI_CLOUD_APIKEY=          # every MiniMax model call (optional only with REQUIRE_USER_API_KEYS)
+DATABASE_URL=              # Postgres, no extensions
 MUX_TOKEN_ID=
 MUX_TOKEN_SECRET=
 
-# OpenAI (required for embeddings)
-OPENAI_API_KEY=
+# Tuning (optional)
+GMI_TEXT_MODEL=            # default MiniMaxAI/MiniMax-M3
+H3_RESOLUTION=             # 768P (default) | 2K
+H3_AUDIO_STRATEGY=         # reference (default) | native | overlay
+H3_MAX_REQUESTS_PER_RUN=   # default 14
+H3_SESSION_CAP_USD=        # default 8
+MUX_ASSET_LIMIT=           # default 10
 
-# ElevenLabs (for translateAudio)
-ELEVENLABS_API_KEY=
+# Public deployments: visitors bring their own GMI Cloud key
+REQUIRE_USER_API_KEYS=true
+KEY_ENCRYPTION_SECRET=     # openssl rand -base64 32
 
-# S3-compatible storage (for translation workflows)
-S3_ENDPOINT=
-S3_REGION=
-S3_BUCKET=
-S3_ACCESS_KEY_ID=
-S3_SECRET_ACCESS_KEY=
+# Optional
+NEXT_PUBLIC_BASE_URL=
+MUX_SIGNING_KEY=  MUX_PRIVATE_KEY=
+ELEVENLABS_API_KEY=  S3_ENDPOINT=  S3_REGION=  S3_BUCKET=  S3_ACCESS_KEY_ID=  S3_SECRET_ACCESS_KEY=   # legacy translation of imported talks
+REMOTION_AWS_ACCESS_KEY_ID=  REMOTION_AWS_SECRET_ACCESS_KEY=                                        # legacy social clips
 ```
-
-### Optional variables
-
-```bash
-# Mux signing keys (for signed playback URLs)
-MUX_SIGNING_KEY=
-MUX_PRIVATE_KEY=
-
-# Additional AI providers
-ANTHROPIC_API_KEY=
-GOOGLE_GENERATIVE_AI_API_KEY=
-```
-
-### Accessing env vars
-
-**Never use `process.env` directly.** Import from the validated env module:
 
 ```typescript
-import { env } from "@/lib/env";
+import { env } from "@/app/lib/env";
 
-// ✅ Correct
-const tokenId = env.MUX_TOKEN_ID;
-
-// ❌ Wrong — bypasses validation, triggers ESLint error
-// eslint-disable-next-line node/no-process-env
-const tokenId = process.env.MUX_TOKEN_ID;
+const cap = env.H3_SESSION_CAP_USD; // correct
+// process.env.H3_SESSION_CAP_USD    // wrong: bypasses validation, lint error
 ```
 
-The ESLint rule `node/no-process-env` enforces this.
+### Bring-your-own-key
+
+`app/lib/api-keys.ts` scopes a visitor's GMI Cloud key with AsyncLocalStorage (`withUserApiKeys`) and encrypts it onto the show row for the life of the run. `resolveGmiKey()` prefers the scoped key, then `GMI_CLOUD_APIKEY`, unless `REQUIRE_USER_API_KEYS=true` forbids the server key. Durable steps do not share an async context, so every model-calling step in `workflows/generate-show.ts` wraps its body in `runWithShowKeys(showId, ...)`.
 
 ---
 
 ## Mux client (`app/lib/mux.ts`)
 
-The shared Mux client and helpers live in `app/lib/mux.ts`. This module:
-
-- Initializes a singleton `Mux` client from `@mux/mux-node`
-- Exports typed helpers for asset retrieval, playback ID extraction, and track lookups
-- Centralizes all credential access (uses validated `env` module)
-
-**Always import from this module** rather than creating new `Mux` instances:
-
-```typescript
-import { getAsset, getPlaybackIdForAsset, listAssets } from "@/lib/mux";
-
-// ✅ Correct — uses shared client
-const asset = await getAsset(assetId);
-
-// ❌ Wrong — creates duplicate client, bypasses centralized setup
-const mux = new Mux({ tokenId: env.MUX_TOKEN_ID, tokenSecret: env.MUX_TOKEN_SECRET });
-```
+One shared `Mux` instance with typed helpers: `createDirectUpload`, `waitForUploadAssetId`, `waitForAssetReady`, `getMuxCapacity` (the preflight), asset and track lookups. Never construct `new Mux(...)` elsewhere.
 
 ---
 
@@ -151,222 +133,107 @@ const mux = new Mux({ tokenId: env.MUX_TOKEN_ID, tokenSecret: env.MUX_TOKEN_SECR
 
 ### Directive placement
 
-Per [Vercel Workflow docs](https://useworkflow.dev/docs/getting-started/next):
-
-- `"use workflow"` goes **inside** the workflow function (first line)
-- `"use step"` goes **inside** each step function (first line)
-
 ```typescript
-// ✅ Correct
-export async function myWorkflow(input: Input) {
+export async function generateShowWorkflow(showId: string) {
   "use workflow";
-  // orchestration logic
+  await researchStep(progress, showId);
+  // ...
 }
 
-async function myStep(data: Data) {
+async function researchStep(progress: WritableStream<ProgressEvent>, showId: string) {
   "use step";
-  // business logic
+  return runWithShowKeys(showId, () => researchStepImpl(progress, showId));
 }
 ```
 
-### Starting workflows from route handlers
+- Node modules (`node:fs`, `pg`, ffmpeg) exist only inside steps: `await import(...)` them there, never at the top of a workflow file.
+- Each stage is one step and one retry unit. Persist results to Postgres before the step returns so a retry resumes instead of regenerating (and re-paying).
+- Progress goes through `getWritable<ProgressEvent>({ namespace: "progress" })` and `workflows/workflow-progress.ts`; the UI polls `generated_shows.status`.
 
-Per [Vercel Workflow docs](https://useworkflow.dev/docs/getting-started/next#create-your-route-handler), workflows are triggered via `start()` from `workflow/api` in a route handler:
+### Starting a workflow
 
 ```typescript
-import { NextResponse } from "next/server";
 import { start } from "workflow/api";
 
-// app/api/workflows/translate-captions/route.ts
-import { translateCaptionsWorkflow } from "@/workflows/translate-captions";
+import { generateShowWorkflow } from "@/workflows/generate-show";
 
-export async function POST(request: Request) {
-  const { assetId, targetLang } = await request.json();
-
-  // Executes asynchronously and doesn't block your app
-  await start(translateCaptionsWorkflow, [assetId, targetLang]);
-
-  return NextResponse.json({ message: "Workflow started" });
-}
+await start(generateShowWorkflow, [showId]); // returns immediately
 ```
 
-Key points:
+### The show pipeline
 
-- `start()` returns immediately — the workflow runs in the background
-- Pass workflow arguments as an array (second argument to `start`)
-- Workflows can be triggered from route handlers, server actions, or any server-side code
+Video: research, script, voices, generate-clips, music, stitch, upload. Audio: research, script, voices, music, stitch, upload. Statuses: `researching`, `scripting`, `voicing`, `generating`, `scoring`, `stitching`, `uploading`, `ready`, `failed`. A capacity preflight against Mux runs before anything paid is generated.
 
-### Layer 2: Running workflows durably
+### Resumability in the UI
 
-Wrap one `@mux/ai` function in a workflow for retries, progress tracking, and resumable execution:
-
-```typescript
-export async function translateCaptionsWorkflow(assetId: string, targetLang: string) {
-  "use workflow";
-  const result = await doTranslation(assetId, targetLang);
-  await persistTrackId(assetId, targetLang, result.trackId);
-  return result;
-}
-
-async function doTranslation(assetId: string, targetLang: string) {
-  "use step";
-  return await translateCaptions(assetId, "en", targetLang, { uploadToMux: true });
-}
-```
-
-### Resumability: what users should experience
-
-This demo intentionally showcases **durable workflows + resumable UI**:
-
-- Workflows run asynchronously via `start()` and continue even if the user refreshes or navigates away.
-- The UI persists in-flight runs in browser `localStorage` (see `app/lib/workflow-state.ts`) and rehydrates/polls on page load so users can leave and come back and still see progress.
-
-### Layer 3: Composing with connectors
-
-Orchestrate multiple primitives, workflows, and external tools:
-
-```typescript
-export async function createClipWorkflow(input: ClipInput) {
-  "use workflow";
-  const captions = await translateAllCaptions(input.assetId, input.targetLangs);
-  const audio = await dubAllAudio(input.assetId, input.targetLangs);
-  const { videoBuffer, posterBuffer } = await renderClipStep(input, captions, audio);
-  const { videoUrl, posterUrl } = await uploadArtifacts(videoBuffer, posterBuffer);
-  await finalizeClip(input.clipId, videoUrl, posterUrl);
-  return { videoUrl, posterUrl };
-}
-```
-
----
-
-## Remotion usage
-
-Remotion is used **only in Layer 3** (connectors) to demonstrate composing `@mux/ai` with external tools.
-
-### Two phases
-
-| Phase       | Where                    | Cost    | Purpose            |
-| ----------- | ------------------------ | ------- | ------------------ |
-| **Preview** | Client (Remotion Player) | Free    | Iterate on styling |
-| **Render**  | Server (Workflow step)   | Compute | Produce MP4        |
-
-**Preview is unlimited and free.** Users can tweak timing, captions, audio, branding without triggering any backend work. Rendering only happens when they click "Render clip".
-
-### Configuration
-
-Remotion files live in the `remotion/` directory:
-
-| File                   | Purpose                                   |
-| ---------------------- | ----------------------------------------- |
-| `index.ts`             | Entry point registering compositions      |
-| `root.tsx`             | Root component wrapping all compositions  |
-| `composition.tsx`      | Video composition definitions             |
-| `config.mjs`           | Remotion configuration (frame rate, etc.) |
-| `webpack-override.mjs` | Custom webpack config for bundling        |
-| `deploy.mjs`           | Lambda deployment script                  |
-
-### NPM scripts
-
-```bash
-# Development — opens Remotion Studio for live preview
-npm run remotion:studio
-
-# Local render — test rendering videos on your machine
-# Pass the composition name as an argument
-npm run remotion:render:local default-composition
-
-# Optionally specify an output path
-npm run remotion:render:local default-composition out/foo.mp4
-
-# Production deploy — bundle and deploy to AWS Lambda
-npm run remotion:deploy
-```
-
-**Important:** `remotion:deploy` is for **production use only**. It bundles your Remotion site and deploys it to AWS Lambda for serverless video rendering. Use `remotion:studio` and `remotion:render:local` during development.
-
----
-
-## Design principles
-
-From `context/design-explained.md`:
-
-- **Minimal, high-contrast, brutalist**: thick black borders, sharp corners, hard shadows
-- **Layer indicators**: badge each section with "PRIMITIVES", "WORKFLOWS", or "CONNECTORS"
-- **Status callouts**: inline progress, not global toasts
-  - Layer 2: single-step status (Queued → Running → Ready)
-  - Layer 3: multi-step pipeline (✓ Translating → ● Rendering → ○ Uploading)
-- **Responsive**: stack vertically on mobile, two-column on desktop
+`app/lib/workflow-state.ts` keeps in-flight runs in localStorage (`workflow:${assetId}:${workflowType}:${targetLang?}` for the legacy talk workflows) so a refresh rehydrates progress; the create flow polls the show row directly.
 
 ---
 
 ## Key routes
 
 ```
-/                           # Landing — pitch the three layers
-/media                      # Index — browse talks
-/media/[slug]               # Detail — all three layers on one asset
-/media/[slug]/clips/new     # Clip creation — Layer 3 showcase
-/media/[slug]/clips/[id]    # Clip detail — rendered output
+/                       # homepage: pitch, the pipeline, "Built for MiniMax Week"
+/create                 # pick a format, give a topic, choose video or audio
+/create/[showId]        # live progress with engine chips per step
+/templates              # the show formats and their hosts
+/watch/[showId]         # player, synced transcript, in-character chat, tangents, memory card, provenance
+/media                  # library: generated shows and imported talks
+/media/[slug]           # imported talk: summary, translation, social clips (legacy @mux/ai layers)
+/search                 # full-text transcript search
 ```
 
 ---
 
-## Data model (Postgres + Mux)
+## Data model (Postgres via Drizzle)
 
-This app uses **Postgres (via Drizzle + pgvector)** as a persisted storage layer for catalog metadata and vector embeddings, while Mux remains the source of truth for video assets and tracks.
+`db/schema.ts`; migrations in `db/migrations/` (`0009_minimax_week.sql` is the rebuild).
 
-### 1. Mux assets (source of truth)
+- `show_templates`: name, show type, host list, reference portrait, notes, display order.
+- `generated_shows`: topic, format (`video` | `audio`), duration, status, `voice_assignments` (host to MiniMax voice id, fixed at first voicing), `theme_lyrics`, `credits_lyrics`, `music_prompt`, `engine_notes`, `research_context`, transcript and segments, `local_render_path`, Mux ids, `encrypted_api_keys` (cleared on any terminal state), `error`.
+- `video_clips`: per clip prompt, status, GMI request id, thumbnail, `audio_source` (`h3` | `tts-overlay`), measured duration.
+- `gmi_spend`: the MiniMax-H3 ledger (show, model, request id, cents, status).
+- `chat_messages`, `show_tangents`, `user_memories` (concept mastery, humor preference, interests, question patterns; confidence decays), `user_settings`.
+- Legacy talks: `videos`, `video_chunks` (generated `search_vector` tsvector, GIN index), `rate_limits`, `feature_metrics`.
 
-Translated caption and audio tracks are attached directly to Mux assets using the `uploadToMux: true` option. The asset's `tracks` array reflects all available language variants.
-
-### 2. Postgres (metadata + embeddings)
-
-Asset metadata is persisted in Postgres (table: `videos`), and transcript chunks with embeddings are stored in `video_chunks` for semantic search.
-
-### 3. Browser localStorage (workflow progress)
-
-Client-side state tracks in-flight workflows:
-
-```typescript
-// Key: `workflow:${assetId}:${workflowType}:${targetLang}`
-interface WorkflowProgress {
-  workflowRunId: string;
-  status: "queued" | "running" | "completed" | "failed";
-  startedAt: string; // ISO timestamp
-  completedAt?: string;
-  error?: string;
-}
-```
-
-This means:
-
-- Mux is the single source of truth for all media and track state
-  - Postgres stores asset metadata + embeddings for fast search and discovery
-- Workflow progress survives page refreshes but is browser-local
-- Multiple browser tabs/devices won't share workflow state (acceptable for a demo)
+Mux stays the source of truth for playback; Postgres holds everything the product reasons about.
 
 ---
 
 ## Common tasks
 
-### Adding a new workflow
+### Adding a model capability
 
-1. Create `workflows/my-workflow.ts` (kebab-case)
-2. Define workflow function with `"use workflow"` inside
-3. Define step functions with `"use step"` inside each
-4. Add route handler to trigger it via `start()` from `workflow/api`
-5. Persist `WorkflowRun` record for status tracking
+1. Add it to the right module under `app/lib/gmi/` (or a new one per model), exporting the model id constant and a typed request/response.
+2. Route it through `runQueued` (media) or `generateText` / `generateJson` (M3).
+3. If it costs money, put it behind the spend guard.
+4. Re-export from `app/lib/gmi/index.ts`, probe it in `scripts/gmi-smoke.ts`, and note what the platform returned in `DOCS/gmi-contracts.md`.
 
-### Adding a new env var
+### Adding a pipeline stage
 
-1. Add to `EnvSchema` in `app/lib/env.ts`
-2. Use `requiredString()` or `optionalString()` helper
-3. Access via `env.MY_VAR`, never `process.env.MY_VAR`
+1. One `"use step"` function in `workflows/generate-show.ts`, wrapped in `runWithShowKeys` if it calls a model.
+2. A status value on `generated_shows.status`, a `GenerationStepId` and an engine chip entry in `app/create/[showId]/constants.ts`.
+3. A row in the homepage stage list (`app/components/how-it-runs.tsx`) naming the model and the service.
+
+### Adding an env var
+
+Add it to `EnvSchema` in `app/lib/env.ts` with `requiredString` or `optionalString`, then to `.env.example` with a one-line comment.
 
 ### Running locally
 
 ```bash
-npm run dev
+npm run dev            # workflows execute locally; npx workflow web inspects runs
+npm run gmi:smoke      # prove model access before touching the pipeline
+npm test               # vitest
 ```
 
-Workflows execute locally in dev mode. Use `npx workflow web` to inspect runs.
+---
+
+## Design principles
+
+From `context/design-explained.md`, applied to the show product:
+
+- Brutalist: thick black borders, sharp corners, hard shadows; Syne headings, Space Mono labels.
+- The pipeline is visible: engine chips name the model and the service per step, on the homepage and in the create flow. Keep them truthful.
+- Failures are shown verbatim, inline, never as toasts and never dressed up.
+- Brand marks: `public/brand/minimax.svg` (coloured), `public/brand/gmi-cloud.svg` (`currentColor`, used as a CSS mask through `GmiCloudWordmark`).

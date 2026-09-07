@@ -17,8 +17,8 @@ const spaceMono = Space_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Interdimensional Cable | AI-Powered Talk Shows",
-  description: "Generate personalized AI talk show segments. Pick a show style, give it a topic, and watch your custom episode come to life.",
+  title: "Interdimensional Cable | AI late-night shows on MiniMax",
+  description: "An autonomous AI showrunner. Pick a format, give it a topic, and MiniMax-M3 writes, Speech 2.8 HD voices, MiniMax-H3 renders and Music 3.0 scores a late-night episode, all served through GMI Cloud.",
 };
 
 export default function RootLayout({

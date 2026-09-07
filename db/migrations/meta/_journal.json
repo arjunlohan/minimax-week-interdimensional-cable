@@ -64,6 +64,13 @@
       "when": 1765828552065,
       "tag": "0008_template_display_order",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1765828552066,
+      "tag": "0009_minimax_week",
+      "breakpoints": true
     }
   ]
 }

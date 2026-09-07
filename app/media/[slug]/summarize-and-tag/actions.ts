@@ -3,19 +3,16 @@
 import { eq } from "drizzle-orm";
 import { getRun, start } from "workflow/api";
 
-import { env } from "@/app/lib/env";
 import { recordMetric } from "@/app/lib/metrics";
 import { checkRateLimit, formatTimeUntilReset, getClientIp } from "@/app/lib/rate-limit";
 import type { WorkflowStatus } from "@/app/media/types";
 import { db, videos } from "@/db";
 import { getSummaryAndTagsWorkflow } from "@/workflows/get-summary-and-tags";
-import type { GetSummaryAndTagsResult, SummaryStepId, SummaryWorkflowResult } from "@/workflows/get-summary-and-tags";
+import type { GetSummaryAndTagsResult, SummaryStepId, SummaryWorkflowResult, SummaryTone as WorkflowSummaryTone } from "@/workflows/get-summary-and-tags";
 
 import { mapWorkflowStatus, readProgressEvents } from "../workflows-panel/helpers";
 
-export type SummaryTone = "neutral" | "professional" | "playful";
-
-type MuxSummaryTone = NonNullable<Parameters<typeof getSummaryAndTagsWorkflow>[1]>["tone"];
+export type SummaryTone = WorkflowSummaryTone;
 
 export type SummaryStatus = WorkflowStatus;
 export type SummaryResult = NonNullable<GetSummaryAndTagsResult>;
@@ -40,25 +37,6 @@ export interface SummaryWorkflowPollResult {
   result?: SummaryResult;
 }
 
-function getProviderConfig() {
-  // Google first: this is the project's primary inference surface. The other two
-  // remain as fallbacks only for the legacy @mux/ai media primitives.
-  const googleKey = env.GOOGLE_GENERATIVE_AI_API_KEY ?? env.GEMINI_API_KEY;
-  if (googleKey) {
-    return { provider: "google" as const, googleApiKey: googleKey };
-  }
-
-  if (env.ANTHROPIC_API_KEY) {
-    return { provider: "anthropic" as const, anthropicApiKey: env.ANTHROPIC_API_KEY };
-  }
-
-  if (env.OPENAI_API_KEY) {
-    return { provider: "openai" as const, openaiApiKey: env.OPENAI_API_KEY };
-  }
-
-  return null;
-}
-
 export async function startSummaryWorkflowAction(
   assetId: string,
   tone: SummaryTone,
@@ -80,24 +58,10 @@ export async function startSummaryWorkflowAction(
     };
   }
 
-  const providerConfig = getProviderConfig();
-  if (!providerConfig) {
-    return {
-      runId: "",
-      status: "failed",
-      error:
-        "No AI provider API key found. Set one of OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_GENERATIVE_AI_API_KEY.",
-    };
-  }
-
   try {
-    const muxTone: MuxSummaryTone = tone;
-    const run = await start(getSummaryAndTagsWorkflow, [assetId, {
-      tone: muxTone,
-      includeTranscript: true,
-      cleanTranscript: true,
-      ...providerConfig,
-    }]);
+    // The summary runs on MiniMax-M3 through the server's GMI Cloud key; a
+    // missing key surfaces from the generate step as a MissingApiKeyError.
+    const run = await start(getSummaryAndTagsWorkflow, [assetId, { tone }]);
 
     // Record metric
     void recordMetric("summarize-and-tag", { assetId, tone });

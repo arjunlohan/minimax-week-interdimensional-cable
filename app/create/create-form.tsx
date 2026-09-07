@@ -8,6 +8,15 @@ import { ApiKeyPanel, readStoredKeys } from "@/app/components/api-key-panel";
 import type { ShowTemplate } from "@/db/schema";
 
 import { createShowAction } from "./actions";
+import {
+  DEFAULT_FORMAT,
+  defaultDurationFor,
+  durationOptionsFor,
+  estimatedH3CostUsd,
+  FORMAT_OPTIONS,
+  isValidDuration,
+} from "./constants";
+import type { ShowFormat } from "./constants";
 import { DurationSelector } from "./duration-selector";
 import { FamiliaritySelector } from "./familiarity-selector";
 import { TemplateSelector } from "./template-selector";
@@ -34,14 +43,26 @@ export function CreateForm({ templates, requiresApiKey }: CreateFormProps) {
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [topic, setTopic] = useState("");
   const [topicType, setTopicType] = useState("freetext");
-  const [mediaFormat, setMediaFormat] = useState<"video" | "audio">("video");
-  const [durationSeconds, setDurationSeconds] = useState(16);
+  const [format, setFormat] = useState<ShowFormat>(DEFAULT_FORMAT);
+  const [durationSeconds, setDurationSeconds] = useState(() => defaultDurationFor(DEFAULT_FORMAT));
   const [familiarity, setFamiliarity] = useState("familiar");
   const [useFrameChaining, setUseFrameChaining] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [apiKeys, setApiKeys] = useState<StoredKeys | null>(null);
 
   const selectedTemplate = templates.find(t => t.id === templateId);
+  const selectedFormat = FORMAT_OPTIONS.find(f => f.value === format) ?? FORMAT_OPTIONS[0];
+  const selectedDuration = durationOptionsFor(format).find(o => o.value === durationSeconds);
+  const isVideo = format === "video";
+
+  function selectFormat(next: ShowFormat) {
+    setFormat(next);
+    // 60 s and 120 s exist on both scales, so a choice that still fits carries
+    // over; anything else lands on the new format's recommended length.
+    if (!isValidDuration(next, durationSeconds)) {
+      setDurationSeconds(defaultDurationFor(next));
+    }
+  }
 
   function canAdvance(): boolean {
     switch (step) {
@@ -83,11 +104,11 @@ export function CreateForm({ templates, requiresApiKey }: CreateFormProps) {
         templateId,
         topic: topic.trim(),
         topicType,
+        format,
         durationSeconds,
         familiarity,
-        useFrameChaining,
-        vertexKey: keys?.vertexKey,
-        geminiKey: keys?.geminiKey,
+        useFrameChaining: isVideo && useFrameChaining,
+        gmiKey: keys?.gmiKey,
       });
 
       if (result.error) {
@@ -184,47 +205,31 @@ export function CreateForm({ templates, requiresApiKey }: CreateFormProps) {
               Configure your show
             </h3>
 
-            {/* Media Format Selector */}
+            {/* Format: decides which pipeline runs and which duration scale applies */}
             <div className="mb-8">
               <label
                 className="mb-3 block text-xs font-bold uppercase tracking-[0.2em] text-foreground-muted"
                 style={{ fontFamily: "var(--font-space-mono)" }}
               >
-                Production Format
+                Format
               </label>
               <div className="grid gap-3 sm:grid-cols-2">
-                <button
-                  type="button"
-                  className={`tone-btn text-left p-4 ${mediaFormat === "video" ? "active ring-2 ring-foreground" : ""}`}
-                  onClick={() => {
-                    setMediaFormat("video");
-                    if (durationSeconds > 40)
-                      setDurationSeconds(16);
-                  }}
-                >
-                  <div className="font-bold text-sm" style={{ fontFamily: "var(--font-syne)" }}>
-                    🎬 Video Talk Show (Max 40s)
-                  </div>
-                  <div className="text-xs opacity-75 mt-1">
-                    Powered by Veo 3.1 on Vertex AI + multi-speaker Gemini TTS.
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  className={`tone-btn text-left p-4 ${mediaFormat === "audio" ? "active ring-2 ring-foreground" : ""}`}
-                  onClick={() => {
-                    setMediaFormat("audio");
-                    if (durationSeconds <= 40)
-                      setDurationSeconds(180);
-                  }}
-                >
-                  <div className="font-bold text-sm" style={{ fontFamily: "var(--font-syne)" }}>
-                    🎙️ Audio Podcast (Up to 5 Min)
-                  </div>
-                  <div className="text-xs opacity-75 mt-1">
-                    Powered directly by Gemini 3.1 Flash TTS multi-speaker dialogue.
-                  </div>
-                </button>
+                {FORMAT_OPTIONS.map(option => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-pressed={format === option.value}
+                    className={`tone-btn p-4 text-left ${format === option.value ? "active" : ""}`}
+                    onClick={() => selectFormat(option.value)}
+                  >
+                    <div className="text-sm font-bold" style={{ fontFamily: "var(--font-syne)" }}>
+                      {option.label}
+                    </div>
+                    <div className="mt-1 text-xs font-normal normal-case tracking-normal opacity-75">
+                      {option.description}
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -234,15 +239,18 @@ export function CreateForm({ templates, requiresApiKey }: CreateFormProps) {
                   className="mb-3 block text-xs font-bold uppercase tracking-[0.2em] text-foreground-muted"
                   style={{ fontFamily: "var(--font-space-mono)" }}
                 >
-                  Duration (
-                  {mediaFormat === "video" ? "Video Clips" : "Podcast Length"}
-                  )
+                  Duration
                 </label>
                 <DurationSelector
                   value={durationSeconds}
                   onChange={setDurationSeconds}
-                  mediaFormat={mediaFormat}
+                  format={format}
                 />
+                {isVideo && (
+                  <p className="mt-3 text-[11px] leading-relaxed text-foreground-muted">
+                    Each clip is one MiniMax-H3 request at $0.13. Research, script, voices and music run on the same GMI Cloud key at no extra charge.
+                  </p>
+                )}
               </div>
               <div>
                 <label
@@ -255,8 +263,8 @@ export function CreateForm({ templates, requiresApiKey }: CreateFormProps) {
               </div>
             </div>
 
-            {/* Frame Chaining Toggle (Only relevant for video) */}
-            {mediaFormat === "video" && (
+            {/* Frame chaining: video only, there are no clips to chain in an audio episode */}
+            {isVideo && (
               <div className="mt-8">
                 <label
                   className="mb-3 block text-xs font-bold uppercase tracking-[0.2em] text-foreground-muted"
@@ -266,15 +274,24 @@ export function CreateForm({ templates, requiresApiKey }: CreateFormProps) {
                 </label>
                 <button
                   type="button"
+                  role="switch"
+                  aria-checked={useFrameChaining}
                   className={`tone-btn w-full text-left ${useFrameChaining ? "active" : ""}`}
                   style={{ fontFamily: "var(--font-space-mono)" }}
                   onClick={() => setUseFrameChaining(!useFrameChaining)}
                 >
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-sm font-bold">Frame Chaining</div>
-                      <div className="mt-1 text-xs opacity-70">
-                        Generates an anchor clip first, then uses its start/end frames to keep all segments visually consistent
+                      <div className="text-sm font-bold">
+                        Frame chaining ·
+                        {" "}
+                        {useFrameChaining ? "on" : "off"}
+                      </div>
+                      <div className="mt-1 text-[10px] font-normal normal-case tracking-normal opacity-70">
+                        Off (default): every clip is anchored to the host portrait and that line's Speech 2.8 HD audio.
+                      </div>
+                      <div className="mt-1 text-[10px] font-normal normal-case tracking-normal opacity-70">
+                        On: each clip starts from the previous clip's last frame for continuity, but MiniMax-H3 then cannot use the host portrait or the spoken line as references.
                       </div>
                     </div>
                     <div
@@ -314,7 +331,7 @@ export function CreateForm({ templates, requiresApiKey }: CreateFormProps) {
                   Template
                 </div>
                 <div className="font-bold" style={{ fontFamily: "var(--font-syne)" }}>
-                  {selectedTemplate?.name ?? "—"}
+                  {selectedTemplate?.name ?? "(none)"}
                 </div>
                 {selectedTemplate && (
                   <span
@@ -334,7 +351,7 @@ export function CreateForm({ templates, requiresApiKey }: CreateFormProps) {
                 >
                   Topic
                 </div>
-                <div className="font-medium">{topic || "—"}</div>
+                <div className="font-medium">{topic || "(none)"}</div>
                 <span
                   className="badge mt-2"
                   style={{ fontFamily: "var(--font-space-mono)" }}
@@ -344,7 +361,18 @@ export function CreateForm({ templates, requiresApiKey }: CreateFormProps) {
               </div>
 
               {/* Settings */}
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="border-3 border-border p-4">
+                  <div
+                    className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted"
+                    style={{ fontFamily: "var(--font-space-mono)" }}
+                  >
+                    Format
+                  </div>
+                  <div className="font-bold" style={{ fontFamily: "var(--font-syne)" }}>
+                    {selectedFormat.label}
+                  </div>
+                </div>
                 <div className="border-3 border-border p-4">
                   <div
                     className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted"
@@ -353,9 +381,17 @@ export function CreateForm({ templates, requiresApiKey }: CreateFormProps) {
                     Duration
                   </div>
                   <div className="font-bold" style={{ fontFamily: "var(--font-syne)" }}>
-                    {durationSeconds}
-                    s
+                    {selectedDuration?.label ?? `${durationSeconds} s`}
                   </div>
+                  {selectedDuration && (
+                    <div
+                      className="mt-1 text-[10px] text-foreground-muted"
+                      style={{ fontFamily: "var(--font-space-mono)" }}
+                    >
+                      {selectedDuration.description}
+                      {selectedDuration.clips !== undefined ? ` · ${estimatedH3CostUsd(selectedDuration.clips)}` : ""}
+                    </div>
+                  )}
                 </div>
                 <div className="border-3 border-border p-4">
                   <div
@@ -370,8 +406,8 @@ export function CreateForm({ templates, requiresApiKey }: CreateFormProps) {
                 </div>
               </div>
 
-              {/* Frame Chaining indicator */}
-              {useFrameChaining && (
+              {/* Frame chaining indicator */}
+              {isVideo && useFrameChaining && (
                 <div className="border-3 border-border p-4">
                   <div
                     className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted"
@@ -380,7 +416,13 @@ export function CreateForm({ templates, requiresApiKey }: CreateFormProps) {
                     Visual Consistency
                   </div>
                   <div className="font-bold" style={{ fontFamily: "var(--font-syne)" }}>
-                    Frame Chaining ON
+                    Frame chaining on
+                  </div>
+                  <div
+                    className="mt-1 text-[10px] text-foreground-muted"
+                    style={{ fontFamily: "var(--font-space-mono)" }}
+                  >
+                    Clips chain from the previous last frame; host portrait and line audio are not used as references.
                   </div>
                 </div>
               )}

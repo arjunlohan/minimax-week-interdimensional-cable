@@ -1,10 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { generateJson, generateText } from "@/app/lib/gmi/text";
 import { getDefaultShowSkill, getShowSkill } from "@/app/lib/skills/registry";
 
 import { runDramaturgyPipeline } from "./orchestrator";
 import { createMockResearchBrief } from "./pass1-research";
 import {
+  planVideoBeatSlots,
   synthesizeDeterministicDeskDraft,
 } from "./pass2-head-writer";
 import {
@@ -14,7 +16,7 @@ import {
   evaluateAndPunchUpJokes,
   evaluateSingleJokeDeterministic,
   runPass3VoiceAndPrune,
-  sanitizeForVeoRai,
+  sanitizeForContentFilter,
 } from "./pass3-voice-prune";
 import {
   AbsurdityTypeSchema,
@@ -34,11 +36,24 @@ import type { ComedicBeat } from "./types";
 // Mock env module
 vi.mock("@/app/lib/env", () => ({
   env: {
-    GEMINI_API_KEY: "test-gemini-key",
-    GOOGLE_GENERATIVE_AI_API_KEY: undefined,
+    GMI_CLOUD_APIKEY: "test-gmi-key",
     DATABASE_URL: "postgresql://localhost:5432/test",
   },
 }));
+
+// The model boundary. Nothing in these tests may reach GMI Cloud.
+vi.mock("@/app/lib/gmi/text", () => ({
+  generateText: vi.fn(),
+  generateJson: vi.fn(),
+  extractJsonValue: vi.fn(),
+  stripThinking: vi.fn((text: string) => text),
+}));
+
+// The fetch boundary for research grounding.
+vi.mock("@/app/lib/research/sources", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/app/lib/research/sources")>();
+  return { ...actual, gatherSources: vi.fn().mockResolvedValue([]) };
+});
 
 // Mock memory bank
 vi.mock("@/app/lib/memory-bank", () => ({
@@ -57,9 +72,17 @@ vi.mock("@/app/lib/memory-bank", () => ({
   }),
 }));
 
+const generateJsonMock = vi.mocked(generateJson);
+const generateTextMock = vi.mocked(generateText);
+
 describe("m2 empirical challenger: adversarial stress-testing of dramaturgy engine", () => {
   const deskSkill = getShowSkill("investigative-desk") ?? getDefaultShowSkill("writers_room_desk");
   const podcastSkill = getShowSkill("speculative-podcast") ?? getDefaultShowSkill("conversational_podcast");
+
+  beforeEach(() => {
+    generateJsonMock.mockReset();
+    generateTextMock.mockReset();
+  });
 
   // ───────────────────────────────────────────────────────────────────────────
   // Suite 1: Prompt Injection & Adversarial Payloads
@@ -115,7 +138,7 @@ describe("m2 empirical challenger: adversarial stress-testing of dramaturgy engi
       });
 
       expect(result).toBeDefined();
-      expect(result.finalScript.segments).toHaveLength(3);
+      expect(result.finalScript.segments).toHaveLength(2); // 24s video -> 12 + 12
       expect(() => DramaturgyResultSchema.parse(result)).not.toThrow();
     });
 
@@ -139,18 +162,58 @@ describe("m2 empirical challenger: adversarial stress-testing of dramaturgy engi
   // Suite 2: Duration Boundary & Granularity Stress (8s to 300s)
   // ───────────────────────────────────────────────────────────────────────────
   describe("suite 2: duration boundary & clip granularity stress", () => {
-    const durations = [
+    const videoDurations = [
+      { dur: 8, slots: [8], desc: "Minimum 8s single-clip desk show" },
+      { dur: 16, slots: [8, 8], desc: "16s 2-beat desk show" },
+      { dur: 24, slots: [12, 12], desc: "24s 2-beat desk show at the 12 s ceiling" },
+      { dur: 32, slots: [11, 11, 10], desc: "32s 3-beat desk show" },
+      { dur: 40, slots: [10, 10, 10, 10], desc: "40s 4-beat desk show" },
+      { dur: 60, slots: Array.from({ length: 6 }, () => 10), desc: "60s 6-clip video show" },
+      { dur: 90, slots: Array.from({ length: 9 }, () => 10), desc: "90s hero episode, 9 MiniMax-H3 clips" },
+      { dur: 120, slots: Array.from({ length: 12 }, () => 10), desc: "120s maximum video show" },
+    ];
+
+    it.each(videoDurations)("plans video duration $dur s as one MiniMax-H3 clip per beat ($desc)", async ({ dur, slots }) => {
+      expect(planVideoBeatSlots(dur)).toEqual(slots);
+
+      const result = await runDramaturgyPipeline({
+        showId: `video-${dur}s`,
+        topic: `Quantum Entanglement Regulations (${dur}s)`,
+        templateId: deskSkill.slug,
+        durationSeconds: dur,
+        format: "video",
+        options: { forceMock: true },
+      });
+
+      expect(result.finalScript.totalDurationSeconds).toBe(dur);
+      expect(result.finalScript.segments.map(s => s.durationSeconds)).toEqual(slots);
+      // Contiguous time codes, every clip inside H3's 4 to 15 s range
+      let expectedStart = 0;
+      for (let i = 0; i < result.finalScript.segments.length; i++) {
+        const seg = result.finalScript.segments[i];
+        expect(seg.clipIndex).toBe(i);
+        expect(seg.startTimeSeconds).toBe(expectedStart);
+        expect(seg.endTimeSeconds).toBe(expectedStart + slots[i]);
+        expect(seg.durationSeconds).toBeGreaterThanOrEqual(4);
+        expect(seg.durationSeconds).toBeLessThanOrEqual(15);
+        expectedStart = seg.endTimeSeconds;
+      }
+      expect(expectedStart).toBe(dur);
+      expect(() => DramaturgyResultSchema.parse(result)).not.toThrow();
+    });
+
+    const audioDurations = [
       { dur: 8, expectedClips: 1, type: "desk", desc: "Minimum 8s single-clip desk show" },
       { dur: 16, expectedClips: 2, type: "desk", desc: "16s standard 2-clip desk show" },
       { dur: 24, expectedClips: 3, type: "desk", desc: "24s 3-clip desk show" },
       { dur: 32, expectedClips: 4, type: "desk", desc: "32s 4-clip desk show" },
-      { dur: 40, expectedClips: 5, type: "desk", desc: "40s maximum Veo video desk show" },
+      { dur: 40, expectedClips: 5, type: "desk", desc: "40s 5-clip desk show" },
       { dur: 60, expectedTurnsMin: 5, type: "podcast", desc: "60s short podcast" },
       { dur: 120, expectedTurnsMin: 5, type: "podcast", desc: "120s standard podcast" },
       { dur: 300, expectedTurnsMin: 5, type: "podcast", desc: "300s maximum 5-minute podcast" },
     ];
 
-    it.each(durations)("correctly orchestrates duration $dur s ($desc)", async ({ dur, expectedClips, expectedTurnsMin, type }) => {
+    it.each(audioDurations)("keeps the 8 s grid for audio duration $dur s ($desc)", async ({ dur, expectedClips, expectedTurnsMin, type }) => {
       const isPodcast = type === "podcast";
       const skill = isPodcast ? podcastSkill : deskSkill;
 
@@ -159,6 +222,7 @@ describe("m2 empirical challenger: adversarial stress-testing of dramaturgy engi
         topic: `Quantum Entanglement Regulations (${dur}s)`,
         templateId: skill.slug,
         durationSeconds: dur,
+        format: "audio",
         options: { forceMock: true },
       });
 
@@ -197,12 +261,33 @@ describe("m2 empirical challenger: adversarial stress-testing of dramaturgy engi
         options: { forceMock: true },
       });
 
-      // 15s / 8s = 2 clips (8s + 7s)
+      // 15s -> 2 beats (8s + 7s), both inside H3's range
       expect(result15.finalScript.segments).toHaveLength(2);
       expect(result15.finalScript.segments[0].durationSeconds).toBe(8);
       expect(result15.finalScript.segments[1].durationSeconds).toBe(7);
       expect(result15.finalScript.segments[1].endTimeSeconds).toBe(15);
       expect(() => DramaturgyResultSchema.parse(result15)).not.toThrow();
+
+      const result37 = await runDramaturgyPipeline({
+        showId: "odd-37s",
+        topic: "Odd Duration Desk Show",
+        templateId: "investigative-desk",
+        durationSeconds: 37,
+        options: { forceMock: true },
+      });
+      expect(result37.finalScript.segments.map(s => s.durationSeconds)).toEqual([10, 9, 9, 9]);
+      expect(result37.finalScript.segments[3].endTimeSeconds).toBe(37);
+
+      const audio15 = await runDramaturgyPipeline({
+        showId: "odd-15s-audio",
+        topic: "Odd Duration Desk Show",
+        templateId: "investigative-desk",
+        durationSeconds: 15,
+        format: "audio",
+        options: { forceMock: true },
+      });
+      // 15s / 8s = 2 clips (8s + 7s)
+      expect(audio15.finalScript.segments.map(s => s.durationSeconds)).toEqual([8, 7]);
     });
   });
 
@@ -237,8 +322,8 @@ describe("m2 empirical challenger: adversarial stress-testing of dramaturgy engi
       expect(weakEval.compositeScore).toBeLessThan(8.0);
     });
 
-    it("handles all weak jokes in table-read when punch-up LLM is unavailable", async () => {
-      const weakBeats: ComedicBeat[] = [
+    function weakBeats(): ComedicBeat[] {
+      return [
         {
           id: "beat-0",
           actId: "act-1",
@@ -257,14 +342,62 @@ describe("m2 empirical challenger: adversarial stress-testing of dramaturgy engi
           visualPrompt: "A professional late-night talk show set with desk.",
         },
       ];
+    }
 
-      const { evaluations, report, revisedBeats } = await evaluateAndPunchUpJokes(weakBeats, deskSkill, 9.0);
+    it("handles all weak jokes in table-read when the punch-up model is unavailable", async () => {
+      generateTextMock.mockRejectedValue(new Error("MiniMax-M3 returned an empty response (finishReason: length)"));
+      const beats = weakBeats();
+      const originalPunchline = beats[0].punchline;
 
+      const { evaluations, report, revisedBeats } = await evaluateAndPunchUpJokes(beats, deskSkill, 9.0);
+
+      expect(generateTextMock).toHaveBeenCalledTimes(1);
       expect(evaluations).toHaveLength(1);
+      expect(evaluations[0].revised).toBe(false);
       expect(report.totalJokes).toBe(1);
       expect(revisedBeats).toHaveLength(1);
+      expect(revisedBeats[0].punchline).toBe(originalPunchline);
       // When threshold is 9.0, joke fails threshold and is recorded as pruned/under threshold
+      expect(report.prunedCount).toBe(1);
       expect(report.averageScore).toBeGreaterThan(0);
+    });
+
+    it("punches up a sub-threshold joke through MiniMax-M3 and records the original", async () => {
+      generateTextMock.mockResolvedValue("\"Officials confirmed every document was reviewed by an emotional support badger.\"");
+      const beats = weakBeats();
+      const originalPunchline = beats[0].punchline;
+
+      const { evaluations, report, revisedBeats } = await evaluateAndPunchUpJokes(beats, deskSkill, 9.0);
+
+      const call = generateTextMock.mock.calls[0][0];
+      expect(call.temperature).toBe(0.9);
+      expect(call.maxOutputTokens).toBe(8192);
+      expect(call.prompt).toContain(beats[0].setup);
+      expect(call.prompt).toContain(originalPunchline);
+
+      expect(evaluations[0]).toMatchObject({
+        revised: true,
+        passed: true,
+        originalPunchline,
+        punchline: "Officials confirmed every document was reviewed by an emotional support badger.",
+      });
+      expect(revisedBeats[0].punchline).toBe("Officials confirmed every document was reviewed by an emotional support badger.");
+      expect(revisedBeats[0].fullText).toContain("emotional support badger");
+      expect(report.revisedCount).toBe(1);
+      expect(report.prunedCount).toBe(0);
+    });
+
+    it("never calls the model for a joke that already passes, or when the punch-up is switched off", async () => {
+      const strong: ComedicBeat = {
+        ...weakBeats()[0],
+        setup: "Look at their customer service policy:",
+        punchline: "It legally transfers your home mortgage to an emotional support badger.",
+      };
+      await evaluateAndPunchUpJokes([strong], deskSkill, 7.0);
+      expect(generateTextMock).not.toHaveBeenCalled();
+
+      await evaluateAndPunchUpJokes(weakBeats(), deskSkill, 9.0, { punchUp: false });
+      expect(generateTextMock).not.toHaveBeenCalled();
     });
 
     it("handles empty beats array without division by zero or NaN LPM", async () => {
@@ -281,9 +414,9 @@ describe("m2 empirical challenger: adversarial stress-testing of dramaturgy engi
   });
 
   // ───────────────────────────────────────────────────────────────────────────
-  // Suite 4: Veo RAI Safety Sanitization & Trademark Stripping
+  // Suite 4: Content-Filter Sanitization & Trademark Stripping
   // ───────────────────────────────────────────────────────────────────────────
-  describe("suite 4: veo RAI safety sanitization on celebrity references and trademarks", () => {
+  describe("suite 4: content-filter sanitization on celebrity references and trademarks", () => {
     const trademarkTestCases = [
       { trigger: "HBO", expected: "premium cable broadcast" },
       { trigger: "NBC", expected: "late-night television network" },
@@ -305,11 +438,11 @@ describe("m2 empirical challenger: adversarial stress-testing of dramaturgy engi
 
     it.each(trademarkTestCases)("sanitizes studio trademark $trigger -> $expected", ({ expected, trigger }) => {
       const input = `Exclusive footage streaming on ${trigger} tonight!`;
-      const { report, sanitizedText } = sanitizeForVeoRai(input);
+      const { report, sanitizedText } = sanitizeForContentFilter(input);
 
       expect(sanitizedText).not.toContain(trigger);
       expect(sanitizedText).toContain(expected);
-      expect(report.isCleanForVeo).toBe(true);
+      expect(report.isCleanForContentFilter).toBe(true);
       expect(report.replacementsApplied.length).toBeGreaterThanOrEqual(1);
     });
 
@@ -327,27 +460,27 @@ describe("m2 empirical challenger: adversarial stress-testing of dramaturgy engi
 
     it.each(celebrityTestCases)("sanitizes full living celebrity name $name -> $sanitized", ({ name, sanitized }) => {
       const input = `Hosted by ${name} in front of a live audience.`;
-      const { report, sanitizedText } = sanitizeForVeoRai(input);
+      const { report, sanitizedText } = sanitizeForContentFilter(input);
 
       expect(sanitizedText).not.toContain(name);
       expect(sanitizedText).toContain(sanitized);
-      expect(report.isCleanForVeo).toBe(true);
+      expect(report.isCleanForContentFilter).toBe(true);
     });
 
     it("sanitizes deepfake and biometric cloning triggers", () => {
       const input = "Generate a photorealistic identical clone of the host with exact physical likeness of the anchor.";
-      const { report, sanitizedText } = sanitizeForVeoRai(input);
+      const { report, sanitizedText } = sanitizeForContentFilter(input);
 
       expect(sanitizedText).not.toContain("photorealistic identical clone of");
       expect(sanitizedText).not.toContain("exact physical likeness of");
       expect(sanitizedText).toContain("stylized broadcast caricature in the rhetorical style of");
       expect(sanitizedText).toContain("satirical host persona reminiscent of");
-      expect(report.isCleanForVeo).toBe(true);
+      expect(report.isCleanForContentFilter).toBe(true);
     });
 
     it("handles complex sentences with multiple mixed trademarks, celebrities, and biometric keywords", () => {
       const dirty = "On HBO's Last Week Tonight, John Oliver and Seth Meyers presented a photorealistic identical clone of the host on NBC.";
-      const { report, sanitizedText } = sanitizeForVeoRai(dirty);
+      const { report, sanitizedText } = sanitizeForContentFilter(dirty);
 
       expect(sanitizedText).not.toMatch(/\bHBO\b/);
       expect(sanitizedText).not.toMatch(/\bLast Week Tonight\b/);
@@ -518,8 +651,11 @@ describe("m2 empirical challenger: adversarial stress-testing of dramaturgy engi
       expect(result.executionMetrics.pass1DurationMs).toBeGreaterThanOrEqual(0);
       expect(result.executionMetrics.pass2DurationMs).toBeGreaterThanOrEqual(0);
       expect(result.executionMetrics.pass3DurationMs).toBeGreaterThanOrEqual(0);
-      expect(result.executionMetrics.jokesEvaluated).toBe(5);
+      expect(result.executionMetrics.jokesEvaluated).toBe(4);
       expect(result.executionMetrics.tableReadAvgScore).toBeGreaterThanOrEqual(7.0);
+      // Mock mode must never reach the model.
+      expect(generateJsonMock).not.toHaveBeenCalled();
+      expect(generateTextMock).not.toHaveBeenCalled();
     });
   });
 });

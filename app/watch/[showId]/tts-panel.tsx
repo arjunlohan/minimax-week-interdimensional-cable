@@ -14,9 +14,9 @@ interface DubbingPanelProps {
   transcript: string;
   hosts: Array<{ name: string }>;
   /**
-   * Per-turn breakdown, needed to dub casts wider than two: Gemini's
-   * multi-speaker TTS takes at most two voices in one call, so a four-handed
-   * panel has to be voiced a turn at a time.
+   * Per-turn breakdown, used to dub multi-host shows: MiniMax Speech 2.8 HD
+   * voices one speaker per request, so a two-anchor desk or a four-seat panel
+   * is voiced a turn at a time, each host in its own voice.
    */
   segments?: Array<{ speaker: string; text: string }>;
 }
@@ -167,7 +167,7 @@ export function DubbingPanel({ transcript, hosts, segments }: DubbingPanelProps)
           className="text-[10px] text-foreground-muted"
           style={{ fontFamily: "var(--font-space-mono)" }}
         >
-          Powered by Gemini TTS — dub the show audio into another language
+          Powered by MiniMax Speech 2.8 HD · dub the show audio into another language
         </p>
 
         {/* Language selector */}

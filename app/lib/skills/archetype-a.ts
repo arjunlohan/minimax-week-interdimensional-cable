@@ -63,7 +63,7 @@ export const ARCHETYPE_A_STANDARD_ACTS: RhetoricalAct[] = [
 
 /**
  * Calculates per-clip word budgets and act distribution for video shows (8s clip granularity).
- * Ensures spoken script segments align with Google Veo 3.1 video clip boundaries.
+ * Ensures spoken script segments align with MiniMax-H3 video clip boundaries.
  */
 export function calculateClipWordBudgets(
   totalDurationSeconds: number,

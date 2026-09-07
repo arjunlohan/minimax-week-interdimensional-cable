@@ -5,9 +5,8 @@ import { headers } from "next/headers";
 import { getRun, start } from "workflow/api";
 import { z } from "zod";
 
-import { resolveVertexKey } from "@/app/lib/api-keys";
 import { env } from "@/app/lib/env";
-import { buildGenAIClient } from "@/app/lib/genai";
+import { generateJson } from "@/app/lib/gmi/text";
 import { findTextTrack, getMuxAudioUrl, getPlaybackIdForAsset, getTrackVtt } from "@/app/lib/mux";
 import type { PlaybackPolicy } from "@/app/lib/mux";
 import { parseVtt } from "@/app/media/[slug]/transcript/helpers";
@@ -288,51 +287,46 @@ export async function getPreviewClipAction(assetId: string): Promise<PreviewClip
 
     if (candidates.length > 0) {
       try {
+        const candidateIds = candidates.map(c => c.id) as [string, ...string[]];
         const SuggestSchema = z.object({
-          candidateId: z.string(),
+          // Only ids from the list are valid; anything else goes back to the
+          // model for repair rather than being silently remapped.
+          candidateId: z.enum(candidateIds),
           startTime: z.number(),
           endTime: z.number(),
           rationale: z.string(),
         });
 
-        const client = buildGenAIClient(resolveVertexKey()!);
-        const response = await client.models.generateContent({
-          model: "gemini-3.7-flash",
-          contents: [{
-            role: "user",
-            parts: [{
-              text: dedent`
-                ${CLIP_SELECTION_SYSTEM_PROMPT}
+        const object = await generateJson({
+          schema: SuggestSchema,
+          label: "social-clip-selection",
+          system: CLIP_SELECTION_SYSTEM_PROMPT,
+          prompt: dedent`
+            <candidates>
+              ${JSON.stringify(candidates, null, 2)}
+            </candidates>
 
-                <candidates>
-                  ${JSON.stringify(candidates, null, 2)}
-                </candidates>
-
-                Select the best candidate and return your choice as a JSON object
-                with keys: candidateId, startTime, endTime, rationale.
-                Remember: prefer natural speech boundaries over exact duration targets.
-              `,
-            }],
-          }],
-          config: { responseMimeType: "application/json" },
+            Select the best candidate and return your choice as a JSON object
+            with keys: candidateId, startTime, endTime, rationale.
+            Remember: prefer natural speech boundaries over exact duration targets.
+          `,
+          temperature: 0.3,
+          maxOutputTokens: 1024,
         });
 
-        const raw = response.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!raw)
-          throw new Error("No clip suggestion returned");
-
-        const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-        const object = SuggestSchema.parse(JSON.parse(cleaned));
-
-        const chosen = candidates.find(c => c.id === object.candidateId) ?? candidates[0];
+        const chosen = candidates.find(c => c.id === object.candidateId)!;
         startTime = clamp(object.startTime, chosen.startTime, chosen.endTime - 5);
         endTime = clamp(object.endTime, startTime + 5, chosen.endTime);
         rationale = object.rationale;
-      } catch {
-        // Fallback to first candidate if AI fails
+      } catch (error) {
+        // The heuristic window is real transcript content, not a canned stand-in,
+        // so it stays usable; the reason the model call failed travels with it
+        // rather than being swallowed.
+        const reason = error instanceof Error ? error.message : String(error);
+        console.warn("[social-clips] MiniMax-M3 clip selection failed:", reason);
         startTime = candidates[0].startTime;
         endTime = candidates[0].endTime;
-        rationale = "AI suggestion unavailable; using best heuristic match.";
+        rationale = `MiniMax-M3 could not pick a clip (${reason}). Showing the strongest heuristic window instead.`;
       }
     } else {
       // Use first cue window

@@ -14,15 +14,27 @@ export type SentenceCadence =
   "conversational_riff" |
   "academic_deadpan";
 
-export type TtsVoice =
-  | "Charon" |
-  "Orus" |
-  "Puck" |
-  "Fenrir" |
-  "Aoede" |
-  "Kore" |
-  "Enceladus" |
-  "Zephyr";
+/**
+ * MiniMax Speech 2.8 HD system voices a host may pin. Mirrors the catalog in
+ * `app/lib/gmi/voices.ts` (asserted equal by the skills tests) so a template
+ * can never name a voice the synthesis layer would reject.
+ */
+export const TTS_VOICE_IDS = [
+  "English_magnetic_voiced_man",
+  "English_Persuasive_Man",
+  "English_Trustworth_Man",
+  "English_Aussie_Bloke",
+  "English_Insightful_Speaker",
+  "English_expressive_narrator",
+  "English_Upbeat_Woman",
+  "English_Graceful_Lady",
+  "English_radiant_girl",
+  "English_captivating_female1",
+  "English_compelling_lady1",
+  "English_Lucky_Robot",
+] as const;
+
+export type TtsVoice = typeof TTS_VOICE_IDS[number];
 
 export type HostRole =
   | "anchor" |

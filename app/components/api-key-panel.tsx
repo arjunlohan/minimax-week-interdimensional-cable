@@ -6,28 +6,28 @@ import { useCallback, useEffect, useState } from "react";
  * Bring-your-own-key entry.
  *
  * Model inference is the dominant running cost, so a public deployment asks the
- * visitor for their own Google key and Google bills them directly. The key stays
- * in this browser; it is sent to the server only to run the visitor's own
- * generation, stored encrypted for the lifetime of that run, and wiped when the
- * run finishes.
+ * visitor for their own GMI Cloud key and GMI bills them directly. One key
+ * drives every model in the pipeline (MiniMax-M3, MiniMax-H3, Speech 2.8 HD,
+ * Music 3.0). The key stays in this browser; it is sent to the server only to
+ * run the visitor's own generation, stored encrypted for the lifetime of that
+ * run, and wiped when the run finishes.
  */
 
-const STORAGE_KEY = "ic:google-api-keys";
+const STORAGE_KEY = "ic:gmi-api-key";
 
 export interface StoredKeys {
-  vertexKey: string;
-  geminiKey?: string;
+  gmiKey: string;
 }
 
-/** Reads saved keys. Returns null whenever storage is unavailable or empty. */
+/** Reads the saved key. Returns null whenever storage is unavailable or empty. */
 export function readStoredKeys(): StoredKeys | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
       return null;
     }
-    const parsed = JSON.parse(raw) as StoredKeys;
-    return parsed.vertexKey ? parsed : null;
+    const parsed = JSON.parse(raw) as Partial<StoredKeys>;
+    return typeof parsed.gmiKey === "string" && parsed.gmiKey.length > 0 ? { gmiKey: parsed.gmiKey } : null;
   } catch {
     // Private windows, cleared site data, or storage disabled entirely.
     return null;
@@ -46,9 +46,15 @@ function writeStoredKeys(keys: StoredKeys | null): void {
   }
 }
 
-function looksLikeGoogleKey(key: string): boolean {
+/**
+ * Mirrors `looksLikeGmiKey` in app/lib/api-keys.ts, which cannot be imported
+ * here because that module pulls in Node-only crypto. GMI Cloud keys are opaque
+ * tokens, so this catches pasted whitespace and truncated copies rather than
+ * asserting a prefix.
+ */
+function looksLikeGmiKey(key: string): boolean {
   const k = key.trim();
-  return (k.startsWith("AQ.") || k.startsWith("AIza")) && k.length >= 30;
+  return k.length >= 20 && !/\s/.test(k);
 }
 
 function mask(key: string): string {
@@ -65,8 +71,7 @@ interface ApiKeyPanelProps {
 export function ApiKeyPanel({ required, onChange }: ApiKeyPanelProps) {
   const [keys, setKeys] = useState<StoredKeys | null>(null);
   const [editing, setEditing] = useState(false);
-  const [vertexInput, setVertexInput] = useState("");
-  const [geminiInput, setGeminiInput] = useState("");
+  const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
@@ -83,25 +88,19 @@ export function ApiKeyPanel({ required, onChange }: ApiKeyPanelProps) {
   }, []);
 
   const save = useCallback(() => {
-    const vertexKey = vertexInput.trim();
-    if (!looksLikeGoogleKey(vertexKey)) {
-      setError("Vertex keys start with \"AQ.\" and Gemini API keys with \"AIza\".");
+    const gmiKey = input.trim();
+    if (!looksLikeGmiKey(gmiKey)) {
+      setError("GMI Cloud keys are at least 20 characters with no spaces. Check for a truncated paste.");
       return;
     }
-    const geminiKey = geminiInput.trim() || undefined;
-    if (geminiKey && !looksLikeGoogleKey(geminiKey)) {
-      setError("That second key does not look like a Google API key.");
-      return;
-    }
-    const next = { vertexKey, geminiKey };
+    const next = { gmiKey };
     writeStoredKeys(next);
     setKeys(next);
     setEditing(false);
     setError(null);
-    setVertexInput("");
-    setGeminiInput("");
+    setInput("");
     onChange?.(next);
-  }, [vertexInput, geminiInput, onChange]);
+  }, [input, onChange]);
 
   const handleCancel = useCallback(() => {
     setEditing(false);
@@ -127,20 +126,11 @@ export function ApiKeyPanel({ required, onChange }: ApiKeyPanelProps) {
           className="badge"
           style={{ fontFamily: "var(--font-space-mono)", background: "var(--surface-elevated)" }}
         >
-          Key saved
+          GMI Cloud key saved
         </span>
         <code className="text-sm" style={{ fontFamily: "var(--font-space-mono)" }}>
-          {mask(keys.vertexKey)}
+          {mask(keys.gmiKey)}
         </code>
-        {keys.geminiKey ?
-            (
-              <code className="text-sm text-foreground-muted" style={{ fontFamily: "var(--font-space-mono)" }}>
-                + video key
-                {" "}
-                {mask(keys.geminiKey)}
-              </code>
-            ) :
-          null}
         <button
           type="button"
           onClick={clear}
@@ -157,10 +147,10 @@ export function ApiKeyPanel({ required, onChange }: ApiKeyPanelProps) {
     <div className="card-brutal flex flex-col gap-4 p-5">
       <div>
         <h3 className="text-lg font-extrabold" style={{ fontFamily: "var(--font-syne)" }}>
-          {required ? "Add your Google API key to generate" : "Use your own Google API key (optional)"}
+          {required ? "Add your GMI Cloud API key to generate" : "Use your own GMI Cloud API key (optional)"}
         </h3>
         <p className="mt-1 text-sm leading-relaxed text-foreground-muted">
-          Generation runs on your key and Google bills your account directly. The key is
+          Generation runs on your key and GMI Cloud bills your account directly. The key is
           stored in this browser, sent only to run your own show, held encrypted while
           that run is in flight, and deleted when it finishes. It is never logged and
           never shared.
@@ -172,51 +162,31 @@ export function ApiKeyPanel({ required, onChange }: ApiKeyPanelProps) {
           className="text-xs font-bold uppercase tracking-[0.15em] text-foreground-muted"
           style={{ fontFamily: "var(--font-space-mono)" }}
         >
-          Vertex AI key · required
+          GMI Cloud API key
         </span>
         <input
           type="password"
-          value={vertexInput}
-          onChange={e => setVertexInput(e.target.value)}
-          placeholder="AQ.… or AIza…"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          placeholder="Paste your GMI Cloud key"
           autoComplete="off"
           spellCheck={false}
           className="border-3 border-border bg-surface px-3 py-2 text-sm outline-none focus-visible:shadow-[3px_3px_0_var(--accent)]"
           style={{ fontFamily: "var(--font-space-mono)" }}
         />
         <span className="text-xs text-foreground-muted">
-          Drives research, scripting, voices and video.
+          Create one at
           {" "}
           <a
-            href="https://aistudio.google.com/app/apikey"
+            href="https://console.gmicloud.ai/"
             target="_blank"
             rel="noopener noreferrer"
             className="underline"
           >
-            Get a key
+            console.gmicloud.ai
           </a>
-        </span>
-      </label>
-
-      <label className="flex flex-col gap-1.5">
-        <span
-          className="text-xs font-bold uppercase tracking-[0.15em] text-foreground-muted"
-          style={{ fontFamily: "var(--font-space-mono)" }}
-        >
-          Gemini Developer key · optional
-        </span>
-        <input
-          type="password"
-          value={geminiInput}
-          onChange={e => setGeminiInput(e.target.value)}
-          placeholder="AIza…"
-          autoComplete="off"
-          spellCheck={false}
-          className="border-3 border-border bg-surface px-3 py-2 text-sm outline-none focus-visible:shadow-[3px_3px_0_var(--accent)]"
-          style={{ fontFamily: "var(--font-space-mono)" }}
-        />
-        <span className="text-xs text-foreground-muted">
-          Only needed to route video through Gemini Omni instead of Veo 3.1.
+          , Settings, API keys. Used only for your own generations and billed to your GMI Cloud account.
+          One key covers MiniMax-M3, MiniMax-H3, Speech 2.8 HD and Music 3.0.
         </span>
       </label>
 
@@ -232,7 +202,7 @@ export function ApiKeyPanel({ required, onChange }: ApiKeyPanelProps) {
         <button
           type="button"
           onClick={save}
-          disabled={!vertexInput.trim()}
+          disabled={!input.trim()}
           className="btn-action disabled:cursor-not-allowed disabled:opacity-40"
         >
           Save key

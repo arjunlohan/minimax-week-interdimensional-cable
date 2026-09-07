@@ -284,17 +284,17 @@ This framing communicates the key insight: `@mux/ai` isn't just AI responses—i
 
 ## Persistence approach (Postgres + Mux)
 
-While Mux remains the source of truth for video assets and tracks, this demo uses **Postgres (with pgvector)** as a persisted layer for asset metadata and embeddings.
+While Mux remains the source of truth for video assets and tracks, this demo uses **Postgres** as a persisted layer for asset metadata and transcript chunks, searched with Postgres full-text search (no extensions). The show pipeline's own tables live in the same database.
 
 ### What gets persisted where
 
-| Data                            | Where                | Why                                                                             |
-| ------------------------------- | -------------------- | ------------------------------------------------------------------------------- |
-| **Asset metadata + embeddings** | Postgres             | Enables fast list/detail views + semantic search without re-fetching everything |
-| **Translated caption tracks**   | Mux asset            | `translateCaptions` with `uploadToMux: true` attaches the track directly        |
-| **Dubbed audio tracks**         | Mux asset            | `translateAudio` with `uploadToMux: true` attaches the track directly           |
-| **Rendered clips**              | S3 storage           | Layer 3 workflow uploads MP4 + poster to configured S3 bucket                   |
-| **Workflow progress**           | Browser localStorage | Client tracks in-flight workflows for UI status display                         |
+| Data                                   | Where                | Why                                                                                         |
+| -------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------- |
+| **Asset metadata + transcript chunks** | Postgres             | Enables fast list/detail views + full-text transcript search without re-fetching everything |
+| **Translated caption tracks**          | Mux asset            | `translateCaptions` with `uploadToMux: true` attaches the track directly                    |
+| **Dubbed audio tracks**                | Mux asset            | `translateAudio` with `uploadToMux: true` attaches the track directly                       |
+| **Rendered clips**                     | S3 storage           | Layer 3 workflow uploads MP4 + poster to configured S3 bucket                               |
+| **Workflow progress**                  | Browser localStorage | Client tracks in-flight workflows for UI status display                                     |
 
 ### Why this works
 

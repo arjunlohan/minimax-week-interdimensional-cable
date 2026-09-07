@@ -86,7 +86,7 @@ export const apocalypticSatireSkill: ShowSkill = {
       "Folks, let's be honest...",
       "What are we doing here?",
     ],
-    ttsVoice: "Enceladus",
+    ttsVoice: "English_expressive_narrator",
     acousticCuePreferences: [
       "[laughs]",
       "[snickers]",
@@ -101,7 +101,7 @@ export const apocalypticSatireSkill: ShowSkill = {
       name: "Tim Villain",
       role: "lead_host",
       position: "center",
-      ttsVoice: "Enceladus",
+      ttsVoice: "English_expressive_narrator",
       personaCraft:
         "Manic cynic and suburban doom philosopher. Treats financial corruption, fake businesses, and social collapse as hilarious performance art. Delivers breathless, escalating compound sentences that build to explosive satirical climaxes. Speaks with absolute, unyielding conviction.",
       personality:
@@ -188,7 +188,7 @@ export const apocalypticSatireSkill: ShowSkill = {
   visualStylePrompt:
     "A comedic podcast host delivering an intense rant behind a broadcast microphone in a luxury patio setting with palm trees, accompanied by a laughing co-host on headphones.",
   notes:
-    "High-intensity satirical podcast format (60s-300s). Multi-speaker synthesis via Gemini 3.1 Flash TTS. Heavy on manic compound diatribes, giggling backchannels, and suburban scam metaphors.",
+    "High-intensity satirical podcast format (60s-300s). Synthesized with MiniMax Speech 2.8 HD. Heavy on manic compound diatribes, giggling backchannels, and suburban scam metaphors.",
   isDefault: true,
   displayOrder: 3,
   aliases: [

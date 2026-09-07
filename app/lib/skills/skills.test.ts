@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { isKnownVoiceId, MINIMAX_VOICES } from "@/app/lib/gmi/voices";
+
 import { apocalypticSatireSkill } from "./apocalyptic-satire";
 import { ARCHETYPE_A_STANDARD_ACTS, calculateClipWordBudgets } from "./archetype-a";
 import { closerLookSkill } from "./closer-look";
@@ -9,10 +11,10 @@ import {
   skillToDbTemplate,
 } from "./db-adapter";
 import {
-  assertLicensedGeminiVoice,
+  assertLicensedMinimaxVoice,
   generateSatiricalDisclaimer,
-  isLicensedGeminiVoice,
-  LICENSED_GEMINI_TTS_VOICES,
+  isLicensedMinimaxVoice,
+  LICENSED_MINIMAX_TTS_VOICES,
   resolveHostTtsVoice,
   sanitizePromptForLegalSafety,
   validateSkillLegalGuardrails,
@@ -207,7 +209,7 @@ describe("two-Archetype Modular Show SKILL Engine", () => {
       expect(dillonDrift.snapbackPhrases.some(p => p.includes("fake business") || p.includes("Western civilization"))).toBe(true);
     });
 
-    it("verifies acoustic tag sets contain expressive stage directions for Gemini TTS", () => {
+    it("verifies acoustic tag sets contain expressive stage directions for Speech 2.8 HD", () => {
       for (const skill of archetypeBSkills) {
         const tags = skill.podcastDynamics!.acousticTagSet;
         expect(tags).toContain("[laughs]");
@@ -263,35 +265,49 @@ describe("two-Archetype Modular Show SKILL Engine", () => {
   // 5. Legal & Identity Guardrails & Licensed TTS Voices
   // ───────────────────────────────────────────────────────────────────────────
   describe("legal & Identity Guardrails & Licensed TTS Voices", () => {
-    it("ensures every host across all skills maps strictly to a licensed Gemini TTS voice", () => {
+    it("ensures every host across all skills maps strictly to a licensed MiniMax voice", () => {
       for (const skill of allSkills) {
         for (const host of skill.hosts) {
           expect(
-            isLicensedGeminiVoice(host.ttsVoice),
+            isLicensedMinimaxVoice(host.ttsVoice),
             `Host ${host.name} in ${skill.id} uses unlicensed voice ${host.ttsVoice}`,
           ).toBe(true);
-          expect(LICENSED_GEMINI_TTS_VOICES).toContain(host.ttsVoice);
+          expect(LICENSED_MINIMAX_TTS_VOICES).toContain(host.ttsVoice);
         }
       }
     });
 
-    it("assertLicensedGeminiVoice throws descriptive error for unlicensed voices", () => {
-      expect(() => assertLicensedGeminiVoice("Charon")).not.toThrow();
-      expect(() => assertLicensedGeminiVoice("Fenrir")).not.toThrow();
-      expect(() => assertLicensedGeminiVoice("InvalidVoice123", "TestHost")).toThrow(/Illegal or unlicensed TTS voice/);
+    it("assertLicensedMinimaxVoice throws descriptive error for unlicensed voices", () => {
+      expect(() => assertLicensedMinimaxVoice("English_magnetic_voiced_man")).not.toThrow();
+      expect(() => assertLicensedMinimaxVoice("English_Aussie_Bloke")).not.toThrow();
+      expect(() => assertLicensedMinimaxVoice("InvalidVoice123", "TestHost")).toThrow(/Illegal or unlicensed TTS voice/);
     });
 
     it("resolveHostTtsVoice returns fallback when voice is unapproved", () => {
-      expect(resolveHostTtsVoice("Charon")).toBe("Charon");
-      expect(resolveHostTtsVoice("UnknownVoice", "Fenrir")).toBe("Fenrir");
-      expect(resolveHostTtsVoice(undefined, "Orus")).toBe("Orus");
+      expect(resolveHostTtsVoice("English_magnetic_voiced_man")).toBe("English_magnetic_voiced_man");
+      expect(resolveHostTtsVoice("UnknownVoice", "English_Aussie_Bloke")).toBe("English_Aussie_Bloke");
+      expect(resolveHostTtsVoice(undefined, "English_Persuasive_Man")).toBe("English_Persuasive_Man");
+    });
+
+    it("resolves voice names stored before the MiniMax migration to their catalog equivalents", () => {
+      expect(resolveHostTtsVoice("Charon")).toBe("English_magnetic_voiced_man");
+      expect(resolveHostTtsVoice("Aoede")).toBe("English_Upbeat_Woman");
+      // Only catalog ids are licensed; legacy names must be resolved first.
+      expect(isLicensedMinimaxVoice("Charon")).toBe(false);
+    });
+
+    it("licenses exactly the MiniMax Speech 2.8 HD voice catalog", () => {
+      expect([...LICENSED_MINIMAX_TTS_VOICES].sort()).toEqual(MINIMAX_VOICES.map(v => v.id).sort());
+      for (const voice of LICENSED_MINIMAX_TTS_VOICES) {
+        expect(isKnownVoiceId(voice)).toBe(true);
+      }
     });
 
     it("generates legally compliant satirical disclaimers", () => {
       const disclaimer = generateSatiricalDisclaimer(investigativeDeskSkill, "AI Regulation");
       expect(disclaimer).toContain("Interdimensional Cable AI Comedy Orchestrator");
       expect(disclaimer).toContain("original satirical parody");
-      expect(disclaimer).toContain("licensed Google Cloud Gemini TTS");
+      expect(disclaimer).toContain("licensed MiniMax Speech 2.8 HD");
       expect(disclaimer).toContain("Not affiliated with or endorsed by");
     });
 
@@ -388,6 +404,17 @@ describe("two-Archetype Modular Show SKILL Engine", () => {
       expect(reconstituted.id).toBe(investigativeDeskSkill.id);
       expect(reconstituted.archetype).toBe("writers_room_desk");
       expect(reconstituted.rhetoricalSpine.acts.length).toBe(3);
+    });
+
+    it("normalises the voice on a stored template: legacy names resolve, junk falls back to the base host", () => {
+      const template = skillToDbTemplate(closerLookSkill);
+      const [host] = template.hosts as Array<Record<string, unknown>>;
+
+      const legacy = dbTemplateToSkill({ ...template, hosts: [{ ...host, ttsVoice: "Orus" }] });
+      expect(legacy.hosts[0].ttsVoice).toBe("English_Persuasive_Man");
+
+      const junk = dbTemplateToSkill({ ...template, hosts: [{ ...host, ttsVoice: "Morgan Freeman" }] });
+      expect(junk.hosts[0].ttsVoice).toBe(closerLookSkill.hosts[0].ttsVoice);
     });
 
     it("returns database templates for all registered skills via getAllSkillsAsDbTemplates", () => {

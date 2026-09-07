@@ -57,6 +57,11 @@ const FFMPEG = (() => {
   return "ffmpeg";
 })();
 
+/** The ffmpeg binary the pipeline shells out to (bundled build, else a system install). */
+export function ffmpegBinary(): string {
+  return FFMPEG;
+}
+
 /**
  * Duration of a PCM WAV buffer, read from its header.
  *

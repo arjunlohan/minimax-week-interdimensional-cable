@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { TTS_VOICE_IDS } from "./types";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Core Enums & Primitive Schemas
 // ─────────────────────────────────────────────────────────────────────────────
@@ -25,16 +27,9 @@ export const SentenceCadenceSchema = z.enum([
   "academic_deadpan",
 ]);
 
-export const TtsVoiceSchema = z.enum([
-  "Charon",
-  "Orus",
-  "Puck",
-  "Fenrir",
-  "Aoede",
-  "Kore",
-  "Enceladus",
-  "Zephyr",
-]);
+// MiniMax Speech 2.8 HD system voice ids; the list lives with the types so the
+// schema and the TtsVoice union cannot disagree.
+export const TtsVoiceSchema = z.enum(TTS_VOICE_IDS);
 
 export const HostRoleSchema = z.enum([
   "anchor",

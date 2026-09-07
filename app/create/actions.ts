@@ -6,7 +6,7 @@ import { Pool } from "pg";
 
 import {
   encryptApiKeys,
-  looksLikeGoogleKey,
+  looksLikeGmiKey,
   MissingApiKeyError,
   requiresUserApiKeys,
 } from "@/app/lib/api-keys";
@@ -14,6 +14,9 @@ import { env } from "@/app/lib/env";
 import { recordMemorySignal, topicToKey } from "@/app/lib/memory-bank";
 import * as schema from "@/db/schema";
 import type { ShowTemplate } from "@/db/schema";
+
+import { durationOptionsFor, isValidDuration } from "./constants";
+import type { ShowFormat } from "./constants";
 
 const pool = new Pool({ connectionString: env.DATABASE_URL });
 const db = drizzle(pool, { schema });
@@ -44,18 +47,23 @@ interface CreateShowInput {
   templateId: string;
   topic: string;
   topicType: string;
+  /** Decides the pipeline: MiniMax-H3 clips, or a Speech 2.8 HD episode with no video. */
+  format: ShowFormat;
+  /** Must be one of the format's duration options; video and audio scales differ. */
   durationSeconds: number;
   familiarity: string;
+  /** Video only. Ignored for audio, which has no clips to chain. */
   useFrameChaining?: boolean;
-  /** Visitor-supplied Google API keys. Required when REQUIRE_USER_API_KEYS is on. */
-  vertexKey?: string;
-  geminiKey?: string;
+  /** Visitor-supplied GMI Cloud key. Required when REQUIRE_USER_API_KEYS is on. */
+  gmiKey?: string;
 }
 
 interface CreateShowResult {
   showId?: string;
   error?: string;
 }
+
+const VALID_FORMATS: ShowFormat[] = ["video", "audio"];
 
 export async function createShowAction(formData: CreateShowInput): Promise<CreateShowResult> {
   // Validate input
@@ -72,9 +80,13 @@ export async function createShowAction(formData: CreateShowInput): Promise<Creat
     return { error: "Invalid topic type." };
   }
 
-  const validDurations = [8, 16, 24, 32, 40, 60, 120, 180, 240, 300];
-  if (!validDurations.includes(formData.durationSeconds)) {
-    return { error: "Invalid duration." };
+  if (!VALID_FORMATS.includes(formData.format)) {
+    return { error: "Invalid format. Choose a video or an audio episode." };
+  }
+
+  if (!isValidDuration(formData.format, formData.durationSeconds)) {
+    const allowed = durationOptionsFor(formData.format).map(o => o.label).join(", ");
+    return { error: `Invalid duration for a ${formData.format} episode. Choose one of: ${allowed}.` };
   }
 
   const validFamiliarities = ["beginner", "familiar", "expert"];
@@ -83,31 +95,36 @@ export async function createShowAction(formData: CreateShowInput): Promise<Creat
   }
 
   // Model inference is the dominant running cost, so a public deployment makes
-  // the visitor bring their own key and Google bills them directly.
-  const vertexKey = formData.vertexKey?.trim();
-  if (requiresUserApiKeys()) {
-    if (!vertexKey) {
-      return { error: new MissingApiKeyError().message };
-    }
-    if (!looksLikeGoogleKey(vertexKey)) {
-      return { error: "That does not look like a Google API key. Vertex keys start with \"AQ.\" and Gemini API keys with \"AIza\"." };
-    }
+  // the visitor bring their own GMI Cloud key and GMI bills them directly.
+  const gmiKey = formData.gmiKey?.trim() || undefined;
+  if (requiresUserApiKeys() && !gmiKey) {
+    return { error: new MissingApiKeyError().message };
+  }
+  if (gmiKey && !looksLikeGmiKey(gmiKey)) {
+    return {
+      error: "That does not look like a GMI Cloud API key: keys are at least 20 characters with no spaces. " +
+        "Copy it again from console.gmicloud.ai (Settings, API keys).",
+    };
   }
 
-  const encryptedApiKeys = vertexKey ?
-      encryptApiKeys({ vertexKey, geminiKey: formData.geminiKey?.trim() || undefined }) :
-    null;
+  // Frame chaining only means something when there are clips to chain.
+  const useFrameChaining = formData.format === "video" && (formData.useFrameChaining ?? false);
 
   try {
+    // Inside the try so a missing KEY_ENCRYPTION_SECRET reads as a clear error
+    // on the form rather than an opaque server action failure.
+    const encryptedApiKeys = gmiKey ? encryptApiKeys({ gmiKey }) : null;
+
     const [show] = await db
       .insert(schema.generatedShows)
       .values({
         templateId: formData.templateId,
         topic: formData.topic.trim(),
         topicType: formData.topicType,
+        format: formData.format,
         durationSeconds: formData.durationSeconds,
         familiarity: formData.familiarity,
-        useFrameChaining: formData.useFrameChaining ?? false,
+        useFrameChaining,
         status: "pending",
         encryptedApiKeys,
         // Without this the dramaturgy orchestrator skips the personalization
@@ -127,8 +144,8 @@ export async function createShowAction(formData: CreateShowInput): Promise<Creat
     });
     void recordMemorySignal("default_user", {
       memoryType: "custom_note",
-      key: `format-${formData.durationSeconds > 40 ? "audio" : "video"}`,
-      value: `Prefers ${formData.durationSeconds > 40 ? "long-form audio" : "short video"} episodes (${formData.durationSeconds}s), ${formData.familiarity} level`,
+      key: `format-${formData.format}`,
+      value: `Prefers ${formData.format} episodes (${formData.durationSeconds}s), ${formData.familiarity} level`,
       sourceShowId: show.id,
     });
 
@@ -156,7 +173,7 @@ export async function createShowAction(formData: CreateShowInput): Promise<Creat
       }
     } catch (err) {
       console.error("[createShowAction] Failed to start generation workflow:", err);
-      // Show was created — the user can retry from the progress page
+      // Show was created; the user can retry from the progress page
     }
 
     return { showId: show.id };

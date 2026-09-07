@@ -1,38 +1,36 @@
-import { and, cosineDistance, desc, eq, gt, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 
-import { MissingApiKeyError, resolveVertexKey } from "@/app/lib/api-keys";
 import { getPlaybackIdForAsset } from "@/app/lib/mux";
 import { checkRateLimit, getClientIp } from "@/app/lib/rate-limit";
 
-import { buildGenAIClient } from "../app/lib/genai";
-
 import { db, videoChunks, videos } from "./index";
 
-import type { GoogleGenAI } from "@google/genai";
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Client & Embedding Helper
+// Full-text search helpers
 // ─────────────────────────────────────────────────────────────────────────────
+//
+// Retrieval runs on Postgres full-text search; there is no embedding model in
+// front of it. `video_chunks.search_vector` is a generated tsvector over each
+// chunk's transcript text (db/migrations/0009_minimax_week.sql) with a GIN
+// index, so a query is one indexed `@@` match. Postgres owns that column, which
+// is why it is absent from the Drizzle schema and referenced with raw `sql`.
 
-function getClient(): GoogleGenAI {
-  const apiKey = resolveVertexKey();
-  if (!apiKey) {
-    throw new MissingApiKeyError();
-  }
-  return buildGenAIClient(apiKey);
+/** The user's words as a tsquery. Web-search syntax: quotes, OR, a leading minus. */
+function toTsQuery(query: string) {
+  return sql`websearch_to_tsquery('english', ${query})`;
 }
 
-export async function getGoogleEmbedding(text: string): Promise<number[]> {
-  const client = getClient();
-  const response = await client.models.embedContent({
-    model: "text-embedding-004",
-    contents: [{ role: "user", parts: [{ text }] }],
-  });
-  const values = response.embeddings?.[0]?.values;
-  if (!values) {
-    throw new Error("Failed to generate Google text-embedding-004 embedding");
-  }
-  return values;
+function matchCondition(query: string) {
+  return sql`${videoChunks}.search_vector @@ ${toTsQuery(query)}`;
+}
+
+/**
+ * Cover-density rank normalised into 0..1. Normalisation flag 32 divides the
+ * rank by (rank + 1), so scores stay comparable across queries and the result
+ * keeps the `similarity_score` field the callers already read.
+ */
+function rankExpression(query: string) {
+  return sql<number>`ts_rank_cd(${videoChunks}.search_vector, ${toTsQuery(query)}, 32)`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -79,7 +77,8 @@ export class SearchRateLimitError extends Error {
 }
 
 /**
- * Performs semantic search on video chunks using Google text-embedding-004 vector similarity.
+ * Searches transcript chunks across every imported video with Postgres
+ * full-text search, best match first.
  * @throws {SearchRateLimitError} When rate limit is exceeded.
  */
 export async function searchVideoChunks(
@@ -103,13 +102,8 @@ export async function searchVideoChunks(
     );
   }
 
-  // Generate embedding using Google text-embedding-004
-  const embedding = await getGoogleEmbedding(query);
+  const rank = rankExpression(query);
 
-  // Calculate similarity (1 - cosine distance)
-  const similarity = sql<number>`1 - (${cosineDistance(videoChunks.embedding, embedding)})`;
-
-  // Perform vector similarity search
   const results = await db
     .select({
       chunkId: videoChunks.id,
@@ -120,11 +114,12 @@ export async function searchVideoChunks(
       title: videos.title,
       summary: videos.summary,
       tags: videos.tags,
-      similarity,
+      rank,
     })
     .from(videoChunks)
     .innerJoin(videos, eq(videoChunks.videoId, videos.id))
-    .orderBy(desc(similarity))
+    .where(matchCondition(query))
+    .orderBy(desc(rank))
     .limit(limit);
 
   // Fetch playback IDs from Mux (in parallel)
@@ -146,7 +141,7 @@ export async function searchVideoChunks(
     chunk_id: result.chunkId,
     mux_asset_id: result.muxAssetId,
     parent_video_tags: result.tags,
-    similarity_score: result.similarity,
+    similarity_score: Number(result.rank),
     video_id: result.videoId,
     playback_id: playbackMap.get(result.muxAssetId) ?? null,
     title: result.title,
@@ -157,7 +152,7 @@ export async function searchVideoChunks(
 }
 
 /**
- * Performs semantic search within a specific video's transcript chunks using Google text-embedding-004.
+ * Searches one video's transcript chunks with Postgres full-text search.
  * Returns matching chunks with start times for transcript scrolling.
  */
 export async function searchChunksWithinVideo(
@@ -169,31 +164,26 @@ export async function searchChunksWithinVideo(
     return [];
   }
 
-  // Generate embedding using Google text-embedding-004
-  const embedding = await getGoogleEmbedding(query);
+  const rank = rankExpression(query);
 
-  // Calculate similarity (1 - cosine distance)
-  const similarity = sql<number>`1 - (${cosineDistance(videoChunks.embedding, embedding)})`;
-
-  // Perform vector similarity search within the specific video
   const results = await db
     .select({
       chunkId: videoChunks.id,
       startTime: videoChunks.startTime,
-      similarity,
+      rank,
     })
     .from(videoChunks)
     .innerJoin(videos, eq(videoChunks.videoId, videos.id))
     .where(and(
       eq(videos.muxAssetId, muxAssetId),
-      gt(similarity, 0.1), // Only return reasonably similar results
+      matchCondition(query),
     ))
-    .orderBy(desc(similarity))
+    .orderBy(desc(rank))
     .limit(limit);
 
   return results.map(result => ({
     chunkId: result.chunkId,
     startTime: result.startTime,
-    similarityScore: result.similarity,
+    similarityScore: Number(result.rank),
   }));
 }

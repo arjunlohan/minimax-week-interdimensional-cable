@@ -24,7 +24,7 @@ export const RATE_LIMITS = {
   // AI summary generation (moderate cost)
   "summary": { maxRequests: 10, windowHours: 24 },
 
-  // Show generation (high cost - VEO + Gemini + Mux)
+  // Show generation (high cost: MiniMax-H3 is paid per request, plus a Mux asset slot)
   "generate-show": { maxRequests: 5, windowHours: 24 },
 
   // Semantic search (low cost per query, but can add up)

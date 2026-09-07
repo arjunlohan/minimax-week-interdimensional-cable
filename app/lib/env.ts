@@ -18,7 +18,7 @@ function requiredString(description: string, message?: string) {
 const EnvSchema = z.object({
   NODE_ENV: z.string().default("development").describe("Runtime environment."),
 
-  // Mux credentials (required for @mux/ai)
+  // Mux credentials (required for playback, uploads and the legacy @mux/ai primitives)
   MUX_TOKEN_ID: requiredString("Mux access token ID.", "Required to access Mux APIs"),
   MUX_TOKEN_SECRET: requiredString("Mux access token secret.", "Required to access Mux APIs"),
 
@@ -29,43 +29,41 @@ const EnvSchema = z.object({
   MUX_SIGNING_KEY: optionalString("Mux signing key ID for signed playback URLs."),
   MUX_PRIVATE_KEY: optionalString("Mux signing private key for signed playback URLs."),
 
-  // AI provider keys (optional, depends on which provider you use but at least one is required)
-  OPENAI_API_KEY: optionalString("OpenAI API key for OpenAI-backed workflows."),
-  ANTHROPIC_API_KEY: optionalString("Anthropic API key for Claude-backed workflows."),
-  GOOGLE_GENERATIVE_AI_API_KEY: optionalString("Google Generative AI API key for Gemini-backed workflows."),
+  // GMI Cloud. One key drives every model call: MiniMax-M3 (research, scripting,
+  // memory, chat), MiniMax-H3 (video), Speech 2.8 HD (voices), Music 3.0 (score).
+  GMI_CLOUD_APIKEY: optionalString("GMI Cloud API key. Serves every MiniMax model call. Optional only when REQUIRE_USER_API_KEYS makes visitors bring their own."),
+  GMI_TEXT_MODEL: optionalString("Text model id on GMI Cloud (default MiniMaxAI/MiniMax-M3)."),
+  H3_RESOLUTION: optionalString("MiniMax-H3 output resolution: 768P or 2K (default 768P)."),
+  // How a clip gets its dialogue audio. "reference": attach the Speech 2.8 line
+  // as reference audio and keep H3's track when it has one; "native": let H3
+  // voice the line itself; "overlay": always replace the clip's audio with the
+  // Speech 2.8 line. A silent clip always falls back to the overlay.
+  H3_AUDIO_STRATEGY: optionalString("MiniMax-H3 dialogue strategy: reference (default), native, or overlay."),
 
-  // Google API key for all Gemini inference and Veo video generation
-  GEMINI_API_KEY: optionalString("Google API key for all Gemini inference (research, scripting, TTS, embeddings) and Veo video generation on Vertex."),
-  GOOGLE_GENAI_USE_VERTEX: optionalString("Set to \"true\" when GEMINI_API_KEY is a Vertex/Agent Platform express-mode key (AQ.* prefix)."),
-  GOOGLE_CLOUD_PROJECT: optionalString("GCP project ID. Required for video generation: long-running video ops cannot be addressed by an express-mode key alone."),
-  GOOGLE_CLOUD_LOCATION: optionalString("Vertex location for video generation (default us-central1)."),
-  VERTEX_VIDEO_MODEL: optionalString("Vertex video model id (default veo-3.1-generate-001)."),
+  // Spend guard. MiniMax-H3 is the only paid model in the pipeline ($0.13 per
+  // request); the caps refuse a request rather than silently degrading a show.
+  H3_MAX_REQUESTS_PER_RUN: optionalString("Maximum MiniMax-H3 requests a single show may issue (default 14)."),
+  H3_SESSION_CAP_USD: optionalString("Maximum cumulative MiniMax-H3 spend recorded in this database, in USD (default 8)."),
 
-  // Dedicated video key. Video is the one workload that can sensibly sit on a
-  // different billing surface (and key) from the rest of the pipeline.
-  GEMINI_VIDEO_API_KEY: optionalString("Gemini Developer API key used only for video generation. When set, video uses GEMINI_VIDEO_MODEL on the Developer API instead of Vertex."),
-  GEMINI_VIDEO_MODEL: optionalString("Developer API video model (default gemini-omni-1.1-flash). Only used with GEMINI_VIDEO_API_KEY."),
-
-  // Bring-your-own-key. On a public deployment the visitor supplies the Google
-  // key and Google bills them directly, so strangers cannot spend the owner's
-  // inference credits. Leave unset for local development.
-  REQUIRE_USER_API_KEYS: optionalString("Set to \"true\" to require visitors to supply their own Google API key before generating."),
+  // Bring-your-own-key. On a public deployment the visitor supplies the GMI
+  // Cloud key and GMI bills them directly, so strangers cannot spend the
+  // owner's inference credits. Leave unset for local development.
+  REQUIRE_USER_API_KEYS: optionalString("Set to \"true\" to require visitors to supply their own GMI Cloud API key before generating."),
   KEY_ENCRYPTION_SECRET: optionalString("Secret used to encrypt visitor API keys at rest. Required when REQUIRE_USER_API_KEYS is true. Generate with: openssl rand -base64 32"),
 
-  // ElevenLabs API key (optional; required only if you want to use translateAudio)
-  ELEVENLABS_API_KEY: optionalString("ElevenLabs API key for translateAudio workflow."),
+  // ElevenLabs API key (optional; required only by the legacy translateAudio workflow)
+  ELEVENLABS_API_KEY: optionalString("ElevenLabs API key for the legacy translateAudio workflow."),
 
   // S3-compatible storage. Optional: only the legacy @mux/ai translation
-  // primitives read these, and those also need ELEVENLABS_API_KEY. Requiring
-  // them would block boot for anyone who only wants the show pipeline.
+  // primitives read these, and those also need ELEVENLABS_API_KEY.
   S3_ENDPOINT: optionalString("S3-compatible endpoint for the legacy translation workflows."),
   S3_REGION: optionalString("S3 region for the legacy translation workflows."),
   S3_BUCKET: optionalString("S3 bucket for the legacy translation workflows."),
   S3_ACCESS_KEY_ID: optionalString("S3 access key ID for the legacy translation workflows."),
   S3_SECRET_ACCESS_KEY: optionalString("S3 secret access key for the legacy translation workflows."),
 
-  // Database (PostgreSQL with pgvector)
-  DATABASE_URL: requiredString("PostgreSQL connection string (pgvector). Required to store/search the Mux catalog metadata.", "Required to connect to the database."),
+  // Database (PostgreSQL)
+  DATABASE_URL: requiredString("PostgreSQL connection string. Required to store shows, transcripts, memory and the spend ledger.", "Required to connect to the database."),
 
   // Remotion Lambda (optional; required only if you want to render social clips)
   REMOTION_AWS_ACCESS_KEY_ID: optionalString("Remotion AWS access key ID for rendering social clips."),

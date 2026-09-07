@@ -2,7 +2,7 @@
   "name": "interdimensional-cable",
   "version": "0.1.0",
   "private": true,
-  "description": "Autonomous, memory-adaptive on-demand podcast and video show network built on Gemini and Google Cloud.",
+  "description": "Interdimensional Cable, MiniMax Week edition: an autonomous AI showrunner. MiniMax-M3 writes, Speech 2.8 HD voices, MiniMax-H3 renders, Music 3.0 scores, all served through GMI Cloud.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -21,11 +21,10 @@
     "visualize:workflows": "npx workflow web",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:veo": "tsx scripts/test-veo.ts",
-    "test:omni": "tsx scripts/test-veo.ts"
+    "gmi:smoke": "tsx scripts/gmi-smoke.ts"
   },
   "dependencies": {
-    "@google/genai": "^1.47.0",
+    "@ai-sdk/gmicloud": "^3.0.15",
     "@mux/ai": "0.3.1",
     "@mux/mux-node": "^12.8.1",
     "@mux/mux-player-react": "^3.10.1",
@@ -35,7 +34,7 @@
     "@remotion/media-utils": "4.0.390",
     "@remotion/player": "4.0.390",
     "@remotion/tailwind-v4": "4.0.390",
-    "ai": "^5.0.113",
+    "ai": "^7.0.93",
     "dedent": "^1.7.0",
     "drizzle-orm": "^0.45.1",
     "ffmpeg-static": "^5.3.0",

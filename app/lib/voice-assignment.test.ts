@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { isKnownVoiceId } from "./gmi/voices";
 import { listShowSkills } from "./skills/registry";
-import { deliveryStyleForHost, inferHostAccent, voiceForHostPublic } from "./tts";
+import { deliveryStyleForHost, inferHostAccent, speedForHost, voiceForHostPublic } from "./tts";
 
-// tts.ts -> api-keys.ts -> env.ts validates at import time. vi.mock is hoisted,
-// so the stub has to be inline rather than a referenced const.
-vi.mock("./env", () => ({ env: { GEMINI_API_KEY: "AQ.test", DATABASE_URL: "postgresql://localhost:5432/test" } }));
-vi.mock("@/app/lib/env", () => ({ env: { GEMINI_API_KEY: "AQ.test", DATABASE_URL: "postgresql://localhost:5432/test" } }));
+// tts.ts imports the GMI speech and text clients, which validate the
+// environment at import. Mock that boundary so the registry and the resolver
+// can be exercised without a key.
+vi.mock("@/app/lib/gmi/speech", () => ({ synthesizeSpeechWav: vi.fn() }));
+vi.mock("@/app/lib/gmi/text", () => ({ generateJson: vi.fn() }));
 
 describe("per-show voice assignment", () => {
   const skills = listShowSkills();
@@ -19,6 +21,14 @@ describe("per-show voice assignment", () => {
     for (const skill of skills) {
       for (const host of skill.hosts) {
         expect(host.ttsVoice, `${skill.name} / ${host.name}`).toBeTruthy();
+      }
+    }
+  });
+
+  it("pins only voices the MiniMax catalog knows", () => {
+    for (const skill of skills) {
+      for (const host of skill.hosts) {
+        expect(isKnownVoiceId(host.ttsVoice), `${skill.name} / ${host.name} pins ${host.ttsVoice}`).toBe(true);
       }
     }
   });
@@ -43,5 +53,15 @@ describe("per-show voice assignment", () => {
     const host = desk.hosts[0];
     expect(inferHostAccent(host)).toMatch(/British/i);
     expect(deliveryStyleForHost(host)).toMatch(/British/i);
+  });
+
+  it("speeds up the hosts written as fast talkers and nobody else", () => {
+    const byName = new Map(skills.flatMap(s => s.hosts.map(h => [h.name, h] as const)));
+    expect(speedForHost(byName.get("John Olive")!)).toBe(1.1);
+    expect(speedForHost(byName.get("Jason Calamaris")!)).toBe(1.1);
+    expect(speedForHost(byName.get("Tim Villain")!)).toBe(1.1);
+    expect(speedForHost(byName.get("Seth Mires")!)).toBeUndefined();
+    expect(speedForHost(byName.get("Chamath Capitalia")!)).toBeUndefined();
+    expect(speedForHost(byName.get("David Stacks")!)).toBeUndefined();
   });
 });

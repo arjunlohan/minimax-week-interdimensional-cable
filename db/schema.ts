@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   index,
@@ -8,7 +9,6 @@ import {
   text,
   timestamp,
   uuid,
-  vector,
 } from "drizzle-orm/pg-core";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,11 +42,14 @@ export const videoChunks = pgTable("video_chunks", {
   chunkIndex: integer("chunk_index").notNull(),
   startTime: real("start_time"),
   endTime: real("end_time"),
-  embedding: vector("embedding", { dimensions: 768 }), // Google text-embedding-004
+  // Chunk text, searched with Postgres full-text search (tsvector, GIN index).
+  // The generated `search_vector` column lives in the migration; queries use
+  // sql`search_vector` directly so Drizzle never tries to write it.
+  text: text("text"),
   createdAt: timestamp("created_at").defaultNow(),
 }, table => [
   index("video_chunks_video_id_idx").on(table.videoId),
-  index("video_chunks_embedding_idx").using("hnsw", table.embedding.op("vector_cosine_ops")),
+  index("video_chunks_search_idx").using("gin", sql`search_vector`),
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -106,12 +109,25 @@ export const generatedShows = pgTable("generated_shows", {
   topic: text("topic").notNull(),
   topicType: text("topic_type").notNull(), // "freetext" | "news_link" | "hacker_news"
   durationSeconds: integer("duration_seconds").notNull(),
+  // "video" (MiniMax-H3 clips) or "audio" (Speech 2.8 podcast). Explicit rather
+  // than inferred from duration: a 90 s video and a 90 s podcast both exist.
+  format: text("format").notNull().default("video"),
   familiarity: text("familiarity").notNull(), // "beginner" | "familiar" | "expert"
   status: text("status").notNull().default("pending"), // pending|researching|scripting|generating|stitching|uploading|ready|failed
+  // Host name -> MiniMax voice id, fixed when the show is first voiced so retries
+  // and dubs keep the same cast.
+  voiceAssignments: jsonb("voice_assignments"),
+  // What Music 3.0 was asked to sing: the theme under the title card and the
+  // end-credits recap. Shown on the watch page as provenance.
+  themeLyrics: text("theme_lyrics"),
+  creditsLyrics: text("credits_lyrics"),
+  musicPrompt: text("music_prompt"),
+  // Free-form facts about the run (audio strategy, clip timings, model ids).
+  engineNotes: jsonb("engine_notes"),
   // Path to the finished local render, handed from the stitch/synthesis step to the
   // upload step. Previously stashed in `error`, which lost it on upload retries.
   localRenderPath: text("local_render_path"),
-  // Visitor-supplied Google API keys, AES-256-GCM encrypted. Present only while
+  // Visitor-supplied GMI Cloud API key, AES-256-GCM encrypted. Present only while
   // a run is in flight; cleared the moment it reaches a terminal state.
   encryptedApiKeys: text("encrypted_api_keys"),
   researchContext: text("research_context"),
@@ -132,7 +148,7 @@ export const generatedShows = pgTable("generated_shows", {
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Video Clips Table (VEO-generated 10s segments)
+// Video Clips Table (MiniMax-H3 clips, 4 to 15 s each)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const videoClips = pgTable("video_clips", {
@@ -144,9 +160,31 @@ export const videoClips = pgTable("video_clips", {
   status: text("status").notNull().default("pending"), // pending|generating|ready|failed
   videoUrl: text("video_url"),
   error: text("error"),
+  gmiRequestId: text("gmi_request_id"),
+  thumbnailUrl: text("thumbnail_url"),
+  // "h3" when the clip's own audio is used, "tts-overlay" when the Speech 2.8 line replaced it.
+  audioSource: text("audio_source"),
+  measuredDurationSeconds: real("measured_duration_seconds"),
   createdAt: timestamp("created_at").defaultNow(),
 }, table => [
   index("video_clips_show_id_idx").on(table.showId),
+]);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GMI Spend Ledger (MiniMax-H3 is the only paid model; the caps read this)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const gmiSpend = pgTable("gmi_spend", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  showId: uuid("show_id").references(() => generatedShows.id, { onDelete: "set null" }),
+  model: text("model").notNull(),
+  requestId: text("request_id").notNull(),
+  costCents: integer("cost_cents").notNull().default(0),
+  status: text("status"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, table => [
+  index("gmi_spend_model_idx").on(table.model),
+  index("gmi_spend_show_id_idx").on(table.showId),
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -242,3 +280,5 @@ export type UserMemory = typeof userMemories.$inferSelect;
 export type NewUserMemory = typeof userMemories.$inferInsert;
 export type ShowTangent = typeof showTangents.$inferSelect;
 export type NewShowTangent = typeof showTangents.$inferInsert;
+export type GmiSpend = typeof gmiSpend.$inferSelect;
+export type NewGmiSpend = typeof gmiSpend.$inferInsert;

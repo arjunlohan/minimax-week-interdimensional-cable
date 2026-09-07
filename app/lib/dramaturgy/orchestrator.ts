@@ -48,7 +48,7 @@ export async function runDramaturgyPipeline(
   if (onProgress) {
     await onProgress({
       step: "research",
-      message: `Researching topic with Google Grounding: "${input.topic}"...`,
+      message: `Researching topic with MiniMax-M3 and fetched sources: "${input.topic}"...`,
       progressFraction: 0.25,
     });
   }
@@ -82,6 +82,7 @@ export async function runDramaturgyPipeline(
     researchBrief: pass1Result.brief,
     skill,
     durationSeconds: input.durationSeconds,
+    format: input.format ?? "video",
     personalizationProfile,
     options: {
       forceMock: input.options?.forceMock ?? false,
@@ -90,11 +91,11 @@ export async function runDramaturgyPipeline(
   });
   const pass2DurationMs = Date.now() - p2StartTime;
 
-  // 5. Pass 3: Voice Tuning, Table-Read Critic & Pre-Flight RAI Safety
+  // 5. Pass 3: Voice Tuning, Table-Read Critic & Pre-Flight Content-Filter Safety
   if (onProgress) {
     await onProgress({
       step: "voice_prune",
-      message: "Running stylometric voice pass, table-read joke scoring, and RAI safety filters...",
+      message: "Running stylometric voice pass, table-read joke scoring, and content-filter safety pass...",
       progressFraction: 0.90,
     });
   }

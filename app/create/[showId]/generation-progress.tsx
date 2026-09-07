@@ -15,36 +15,41 @@ interface GenerationProgressProps {
   template: ShowTemplate;
 }
 
-const STATUS_TO_STEP: Record<string, GenerationStepId | null> = {
-  pending: null,
-  researching: "research",
-  scripting: "script",
-  framing: "frame-chain",
-  generating: "generate-clips",
-  stitching: "stitch",
-  uploading: "upload",
-  ready: null,
-  failed: null,
+/**
+ * Which steps a `generated_shows.status` value means are running.
+ *
+ * The status column is coarser than the step list: "generating" covers the
+ * whole MiniMax-H3 phase, so with frame chaining on both H3 steps show as
+ * active rather than pretending the boundary frame is still in flight minutes
+ * later. Steps that do not run for this show are filtered out by the caller.
+ */
+const STATUS_TO_STEPS: Record<string, GenerationStepId[]> = {
+  pending: [],
+  researching: ["research"],
+  scripting: ["script"],
+  voicing: ["voices"],
+  generating: ["frame-chain", "generate-clips"],
+  scoring: ["music"],
+  stitching: ["stitch"],
+  uploading: ["upload"],
+  ready: [],
+  failed: [],
 };
 
-function getStepOrder(useFrameChaining: boolean): GenerationStepId[] {
-  if (useFrameChaining) {
-    return ["research", "script", "frame-chain", "generate-clips", "stitch", "upload"];
-  }
-  return ["research", "script", "generate-clips", "stitch", "upload"];
+function getActiveSteps(status: string, stepOrder: GenerationStepId[]): GenerationStepId[] {
+  return (STATUS_TO_STEPS[status] ?? []).filter(id => stepOrder.includes(id));
 }
 
-function getCompletedSteps(status: string, useFrameChaining: boolean): GenerationStepId[] {
-  const stepOrder = getStepOrder(useFrameChaining);
-  const currentStep = STATUS_TO_STEP[status];
-
-  if (status === "ready")
+function getCompletedSteps(status: string, stepOrder: GenerationStepId[]): GenerationStepId[] {
+  if (status === "ready") {
     return [...stepOrder];
-  if (!currentStep)
+  }
+  const active = getActiveSteps(status, stepOrder);
+  if (active.length === 0) {
     return [];
-
-  const currentIndex = stepOrder.indexOf(currentStep);
-  return stepOrder.slice(0, currentIndex);
+  }
+  const firstActive = Math.min(...active.map(id => stepOrder.indexOf(id)));
+  return stepOrder.slice(0, firstActive);
 }
 
 export function GenerationProgress({ show, template }: GenerationProgressProps) {
@@ -74,14 +79,13 @@ export function GenerationProgress({ show, template }: GenerationProgressProps) 
     return () => clearInterval(interval);
   }, [status, poll]);
 
-  const useFrameChaining = show.useFrameChaining ?? false;
-  const completedSteps = getCompletedSteps(status, useFrameChaining);
-  const currentStep = STATUS_TO_STEP[status];
-  // Mirrors checkShowFormatStep in workflows/generate-show.ts: > 40s is an audio podcast.
-  const isAudio = (show.durationSeconds ?? 16) > 40;
-  const visibleSteps = generationSteps(isAudio).filter(
-    s => s.id !== "frame-chain" || useFrameChaining,
-  );
+  // The show's format column decides the path; the workflow reads the same column.
+  const isAudio = show.format === "audio";
+  const useFrameChaining = !isAudio && (show.useFrameChaining ?? false);
+  const visibleSteps = generationSteps(isAudio, { useFrameChaining });
+  const stepOrder = visibleSteps.map(s => s.id);
+  const activeSteps = getActiveSteps(status, stepOrder);
+  const completedSteps = getCompletedSteps(status, stepOrder);
 
   return (
     <div className="space-y-8">
@@ -109,7 +113,7 @@ export function GenerationProgress({ show, template }: GenerationProgressProps) 
           <div className="space-y-3">
             {visibleSteps.map((step) => {
               const isCompleted = completedSteps.includes(step.id);
-              const isCurrent = currentStep === step.id;
+              const isCurrent = activeSteps.includes(step.id);
 
               return (
                 <div key={step.id} className="flex items-start gap-3">

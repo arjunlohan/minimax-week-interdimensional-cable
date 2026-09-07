@@ -99,6 +99,32 @@ export const ResearchBriefSchema = z.object({
   isMocked: z.boolean().default(false),
 });
 
+/**
+ * What MiniMax-M3 returns for pass 1. The pass owns the topic, the search
+ * metadata and the timestamps, and it resolves the selected angle itself, so
+ * the model is only asked for the research and the premises.
+ *
+ * A source that is not an absolute http(s) URL is dropped rather than
+ * rejected: the pass discards any citation outside the fetched sources anyway,
+ * and a repair round regenerates the whole 65k-token brief for one bad string.
+ */
+export const ResearchBriefDraftSchema = z.object({
+  summary: z.string().min(10),
+  groundedFacts: z.array(GroundedFactSchema.extend({
+    sourceUrl: z.preprocess(
+      value => typeof value === "string" && /^https?:\/\//i.test(value.trim()) ? value.trim() : undefined,
+      z.string().url().optional(),
+    ),
+    sourceTitle: z.preprocess(
+      value => typeof value === "string" && value.trim() ? value.trim() : undefined,
+      z.string().optional(),
+    ),
+  })).min(1),
+  incongruitySeeds: z.array(IncongruitySeedSchema).min(1),
+  premiseAngles: z.array(ComedicPremiseAngleSchema).min(1),
+  selectedAngleId: z.string().optional(),
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Pass 2 Schemas
 // ─────────────────────────────────────────────────────────────────────────────
@@ -166,7 +192,7 @@ export const PodcastTurnSchema = z.object({
 
 /**
  * Callback bookkeeping. Descriptive metadata about which running gag pays off
- * where — it steers nothing downstream.
+ * where; it steers nothing downstream.
  *
  * These were required, and the model does not reliably populate every field, so
  * a single missing string threw during validation and discarded the whole
@@ -215,6 +241,18 @@ export const HeadWriterDraftSchema = z.object({
   totalEstimatedSeconds: z.number().positive().optional(),
 });
 
+/**
+ * What MiniMax-M3 returns for pass 2. The pass stamps the archetype, the show
+ * id, the topic and the selected premise on afterwards, so the model is not
+ * asked to echo them back.
+ */
+export const HeadWriterDraftModelOutputSchema = HeadWriterDraftSchema.omit({
+  archetype: true,
+  showId: true,
+  topic: true,
+  selectedPremise: true,
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Pass 3 Schemas
 // ─────────────────────────────────────────────────────────────────────────────
@@ -243,14 +281,14 @@ export const TableReadReportSchema = z.object({
   laughsPerMinute: z.number().nonnegative(),
 });
 
-export const VeoRaiSanitizationReportSchema = z.object({
+export const ContentFilterSanitizationReportSchema = z.object({
   originalLength: z.number().int().nonnegative(),
   sanitizedLength: z.number().int().nonnegative(),
   replacementsApplied: z.array(z.object({
     pattern: z.string(),
     replacement: z.string(),
   })),
-  isCleanForVeo: z.boolean(),
+  isCleanForContentFilter: z.boolean(),
 });
 
 export const FinalScriptSegmentSchema = z.object({
@@ -282,7 +320,7 @@ export const FinalScriptSchema = z.object({
     catchphrasesUsed: z.array(z.string()),
     outrageAffabilityScore: z.number().min(0).max(1).optional(),
   }),
-  sanitizationReport: VeoRaiSanitizationReportSchema,
+  sanitizationReport: ContentFilterSanitizationReportSchema,
 });
 
 export const DramaturgyResultSchema = z.object({

@@ -44,7 +44,7 @@ export const investigativeDeskSkill: ShowSkill = {
       "Which brings us to...",
       "Yes, exactly...",
     ],
-    ttsVoice: "Charon",
+    ttsVoice: "English_magnetic_voiced_man",
     acousticCuePreferences: ["[laughs]", "[sighs]", "[incredulous]"],
   },
   hosts: [
@@ -52,7 +52,7 @@ export const investigativeDeskSkill: ShowSkill = {
       name: "John Olive",
       role: "anchor",
       position: "center",
-      ttsVoice: "Charon",
+      ttsVoice: "English_magnetic_voiced_man",
       personaCraft:
         "Articulate, fast-talking British satirical anchor delivering long, passionate rants that build from measured journalistic facts to incredulous existential outrage. Delivers elaborate similes that escalate to bizarre extremes before snapping back to reality.",
       personality:

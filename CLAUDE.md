@@ -1,167 +1,135 @@
-# CLAUDE.md — Interdimensional Cable (Multimodal Frontier Hackathon)
+# CLAUDE.md: Interdimensional Cable (MiniMax Week × GMI Cloud)
 
-## Project Overview
+## What this project is
 
-A reference architecture for **durable video AI pipelines** using `@mux/ai`, Vercel Workflow DevKit, and Remotion. Three progressive integration layers:
+An autonomous AI showrunner. Pick a late-night format, give it a topic or a link, and a durable workflow researches it, writes it, performs every line, renders the host on camera, scores a theme, sings the credits and publishes a 60 to 120 second video episode (or an audio podcast up to five minutes). The host then answers questions in character and remembers the listener across sessions; a coordinator script can pick the next episode from Hacker News on its own.
 
-1. **Layer 1 (Primitives):** Direct function calls — summarization, tagging, transcript search
-2. **Layer 2 (Workflows):** Durable workflows — caption translation, audio dubbing
-3. **Layer 3 (Connectors):** Complex pipelines — social clip rendering via Remotion Lambda
+Built for the MiniMax Week × GMI Cloud hackathon (track: Synthesis). The rule that shapes the code: **core generation runs on MiniMax models served through GMI Cloud; supporting infrastructure can come from anywhere and is named, not hidden.**
 
-**Stack:** Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · PostgreSQL + pgvector · Drizzle ORM · Mux · Remotion · Vercel Workflows
+The architecture was started on 2026-08-29 for another event on a different model stack and rebuilt on MiniMax during MiniMax Week (the README's provenance section names the original). The previous provider's SDK is gone from the dependency tree. Do not reintroduce it or any other model provider.
 
----
-
-## Workflow Orchestration
-
-### 1. Plan Mode Default
-
-- Enter plan mode for ANY non-trivial task (3+ steps or architectural decisions)
-- If something goes sideways, STOP and re-plan immediately — don't keep pushing
-- Use plan mode for verification steps, not just building
-- Write detailed specs upfront to reduce ambiguity
-
-### 2. Subagent Strategy
-
-- Use subagents liberally to keep main context window clean
-- Offload research, exploration, and parallel analysis to subagents
-- For complex problems, throw more compute at it via subagents
-- One task per subagent for focused execution
-
-### 3. Self-Improvement Loop
-
-- After ANY correction from the user: update `tasks/lessons.md` with the pattern
-- Write rules for yourself that prevent the same mistake
-- Ruthlessly iterate on these lessons until mistake rate drops
-- Review lessons at session start for relevant project
-
-### 4. Verification Before Done
-
-- Never mark a task complete without proving it works
-- Diff behavior between main and your changes when relevant
-- Ask yourself: "Would a staff engineer approve this?"
-- Run tests, check logs, demonstrate correctness
-
-### 5. Demand Elegance (Balanced)
-
-- For non-trivial changes: pause and ask "is there a more elegant way?"
-- If a fix feels hacky: "Knowing everything I know now, implement the elegant solution"
-- Skip this for simple, obvious fixes — don't over-engineer
-- Challenge your own work before presenting it
-
-### 6. Autonomous Bug Fixing
-
-- When given a bug report: just fix it. Don't ask for hand-holding
-- Point at logs, errors, failing tests — then resolve them
-- Zero context switching required from the user
-- Go fix failing CI tests without being told how
+**Stack:** Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · PostgreSQL + Drizzle (full-text search, no extensions) · Vercel Workflow DevKit · Mux · FFmpeg · Remotion (legacy social clips only)
 
 ---
 
-## Task Management
+## Model map
 
-1. **Plan First:** Write plan to `tasks/todo.md` with checkable items
-2. **Verify Plan:** Check in before starting implementation
-3. **Track Progress:** Mark items complete as you go
-4. **Explain Changes:** High-level summary at each step
-5. **Document Results:** Add review section to `tasks/todo.md`
-6. **Capture Lessons:** Update `tasks/lessons.md` after corrections
-
----
-
-## Core Principles
-
-- **Simplicity First:** Make every change as simple as possible. Impact minimal code.
-- **No Laziness:** Find root causes. No temporary fixes. Senior developer standards.
-- **Minimal Impact:** Changes should only touch what's necessary. Avoid introducing bugs.
+| Model                                                    | Used for                                                                                                                                                      | Where                                                                                                                                                                               |
+| :------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------ | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **MiniMax-M3** (`MiniMaxAI/MiniMax-M3`, 1M context)      | Research on fetched sources, the three-pass writers' room, memory extraction, in-character chat and tangents, Taskmaster ranking, talk summaries, song lyrics | `app/lib/gmi/text.ts` via `@ai-sdk/gmicloud`; callers in `app/lib/dramaturgy/`, `app/lib/memory-bank.ts`, `app/watch/[showId]/chat/actions.ts`, `scripts/autonomous-trend-agent.ts` |
+| **MiniMax-H3** (video, 4 to 15 s, 768P or 2K, $0.13/req) | Every clip of a video episode, reference-to-video: host portrait + that line's audio. The only paid model.                                                    | `app/lib/gmi/video.ts`, driven by `workflows/generate-show.ts`                                                                                                                      |
+| **Speech 2.8 HD** (`minimax-tts-speech-2.8-hd`)          | One voice per line with emotion from the acting direction; fixed voice per host stored on the show; podcast episodes; chat replies                            | `app/lib/gmi/speech.ts`, `app/lib/tts.ts`, catalog in `app/lib/gmi/voices.ts`                                                                                                       |
+| **Music 3.0** (`minimax-music-3.0`)                      | Theme hook and the sung end credits, rendered per episode                                                                                                     | `app/lib/gmi/music.ts`, mixed by `app/lib/assemble.ts`                                                                                                                              |
+| **Voice clone 2.8 HD**                                   | Wired, optional                                                                                                                                               | `app/lib/gmi/speech.ts` (`cloneVoiceAndSpeak`)                                                                                                                                      |
 
 ---
 
-## Quick Commands
+## The shared GMI layer: `app/lib/gmi/`
+
+**Every model call goes through this directory.** No `fetch` to GMI Cloud or MiniMax anywhere else, no other provider SDK, no model ids outside it.
+
+- `client.ts`: the key (`requireGmiKey`), both base URLs (OpenAI-compatible LLM endpoint; request queue for media), `gmiFetchJson` with 429 and 5xx retry and GMI's nested error unwrapping.
+- `text.ts`: `generateText` and `generateJson` (Zod schema, one repair round, M3's thinking stripped). Use `generateJson` for anything structured; never parse model output by hand elsewhere.
+- `queue.ts`: submit, poll, download for the request queue. Content refusals become `GmiContentFilterError`; everything else `GmiRequestFailedError`.
+- `upload.ts`: bytes to a public URL (content-addressed, cached per process). H3 inputs must be URLs.
+- `speech.ts`, `music.ts`, `video.ts`, `voices.ts`: one module per model, each exporting its model id constant.
+- `spend.ts`: the H3 spend guard (below).
+- `index.ts` re-exports the public surface. Import from `@/app/lib/gmi`.
+
+Key resolution: `resolveGmiKey()` in `app/lib/api-keys.ts` prefers the visitor's key (AsyncLocalStorage, bring-your-own-key) over `GMI_CLOUD_APIKEY`. Workflow steps do not share an async context, so each model-calling step re-establishes the scope through `runWithShowKeys`.
+
+## Spend guard
+
+MiniMax-H3 is the only paid model. `assertH3Budget(showId)` runs before every submission and `recordH3Request` writes the row to `gmi_spend` before the request is sent, so a crash after submission still counts. Two caps, both throwing `BudgetExceededError` rather than degrading the show: per run (`H3_MAX_REQUESTS_PER_RUN`, default 14) and all-time for the database (`H3_SESSION_CAP_USD`, default 8). Do not add H3 calls that bypass `generateH3Clip`.
+
+## Honesty rule
+
+**Never substitute canned content for a failed model call.** No mock research, placeholder scripts, silent clips, stock music, or "sample" transcripts. A URL that cannot be read fails the research step with the reason. An empty model reply throws with the finish reason. A refused clip may get a rewritten line and a retry (at most twice), never a stock shot. Every failing step stores its real reason on `generated_shows.error` so the UI can show it. A fallback that silently fabricates data is worse than a crash.
+
+## Vercel Workflows
+
+- `"use workflow"` is the first line inside the workflow function; `"use step"` the first line inside each step function.
+- Node modules (`fs`, `pg`, ffmpeg) are only available inside steps: import them dynamically there, never at the top of `workflows/*.ts`.
+- Trigger with `start()` from `workflow/api` in a route handler or server action; it returns immediately.
+- A step boundary is the retry unit. Keep each stage one step; write intermediate results to Postgres before returning so a retry resumes rather than repeats.
+- Progress is streamed with `getWritable` (`workflows/workflow-progress.ts`) and polled from `generated_shows.status`.
+
+---
+
+## Working rules
+
+- Plan before non-trivial work (three or more steps, or anything architectural); write the plan to `tasks/todo.md` and keep it current. If something goes sideways, stop and re-plan.
+- Never mark work done without proving it: `npx tsc --noEmit`, `npm run lint`, `npm test`, and for pipeline changes a real run with the smoke script or a generated show.
+- Simplicity first, minimal impact, root causes over patches. Ask "is there a more elegant way?" on non-trivial changes and skip that question for obvious fixes.
+- After any correction from the user, record the pattern in `tasks/lessons.md`.
+- No em dashes in code, copy or docs. Use commas, colons or parentheses; in UI labels use a middot separator ("Voices · Speech 2.8 HD").
+
+---
+
+## Commands
 
 ```bash
-npm run dev                    # Dev server (http://localhost:3000)
-npm run build                  # Production build
-npm run lint                   # ESLint
-npm run lint:fix               # Auto-fix lint issues
-npm run db:generate            # Generate migration from schema changes
-npm run db:migrate             # Run pending migrations
-npm run db:studio              # Drizzle Studio (http://localhost:4983)
-npm run import-mux-assets      # Populate DB with Mux assets + embeddings
-npm run remotion:studio        # Remotion Studio (http://localhost:5432)
-npm run remotion:deploy        # Deploy Remotion to AWS Lambda
-npm run visualize:workflows    # Workflow visualization UI
+npm run dev                    # http://localhost:3000
+npm run build                  # production build
+npm run lint                   # ESLint (antfu config); lint:fix to auto-fix
+npm test                       # vitest
+npm run db:generate            # migration from schema changes
+npm run db:migrate             # apply migrations
+npm run db:studio              # Drizzle Studio on :4983
+npm run seed-templates         # show formats and hosts
+npm run gmi:smoke              # M3 + Speech 2.8 + Music 3.0 (free); --video adds two H3 clips ($0.26); --voices probes every voice
+npm run agent:taskmaster       # the autonomous coordinator
+npm run import-mux-assets      # import Mux assets as browsable talks
+npm run remotion:studio        # legacy social clips
 ```
 
 ---
 
-## Code Conventions
+## Conventions
 
-### File Naming
-
-- **kebab-case** for all source files (e.g., `translate-captions.ts`)
-
-### Style (ESLint enforced)
-
-- 2-space indent, double quotes, always semicolons
-- Cuddled braces (`} else {`)
-- Import order: side-effects → built-ins → parent/sibling → external → internal (`@mux/ai`)
-
-### Environment Variables
-
-- **Never** use `process.env` directly
-- **Always** import from `app/lib/env.ts` (Zod-validated)
-
-```typescript
-import { env } from "@/app/lib/env";
-```
-
-### Mux Client
-
-- Single shared instance in `app/lib/mux.ts` — never create new `Mux()` instances
-- Import helpers: `import { getAsset, listAssets } from "@/lib/mux";`
-
-### Vercel Workflows
-
-- `"use workflow"` as first line inside workflow function
-- `"use step"` as first line inside step functions
-- Trigger via `start()` from `workflow/api` in route handlers
-
-### Client State
-
-- Workflow progress persisted in localStorage via `app/lib/workflow-state.ts`
-- Key format: `workflow:${assetId}:${workflowType}:${targetLang?}`
+- kebab-case file names. 2-space indent, double quotes, semicolons, cuddled braces, operators at line end. Imports sorted by `perfectionist/sort-imports` (side-effect styles, built-ins, external, internal, parent, sibling; blank lines between groups).
+- Never read `process.env`; import `env` from `app/lib/env.ts` (Zod-validated). Add new variables to `EnvSchema` with `requiredString` or `optionalString`, then to `.env.example`.
+- One Mux client: `app/lib/mux.ts`. Never construct `new Mux()` elsewhere.
+- ffmpeg through `app/lib/media.ts` and `app/lib/stitch.ts` (`ffmpegBinary` resolves the bundled or system binary).
+- `console.log` warns; keep logs prefixed (`[gmi:h3]`, `[workflow:stitch]`) and remove noise before committing.
+- Client-side workflow progress lives in localStorage via `app/lib/workflow-state.ts`.
 
 ---
 
-## Key Directories
+## Key directories
 
 ```
-app/                    # Next.js App Router (pages, API routes, components, lib)
-app/media/[slug]/       # Media detail page — co-located feature modules
-workflows/              # Vercel Workflow definitions (durable pipelines)
-remotion/               # Video rendering compositions (social clips)
-db/                     # Drizzle ORM schema + migrations
-scripts/                # CLI utilities (import, cleanup)
-context/                # AI assistant documentation
-DOCS/                   # Operational docs (rate limits, metrics, deployments)
-tasks/                  # Task tracking (todo.md, lessons.md)
+app/                        # Next.js App Router
+app/lib/gmi/                # the shared MiniMax / GMI Cloud layer (every model call)
+app/lib/dramaturgy/         # three-pass writers' room on M3
+app/lib/skills/             # show formats: hosts, structure, guardrails
+app/lib/memory-bank.ts      # cross-session listener memory (M3 extraction, Ebbinghaus decay)
+app/lib/tts.ts              # per-line speech on Speech 2.8 HD
+app/lib/media.ts, stitch.ts # ffmpeg helpers
+app/create/                 # create flow and live progress with engine chips
+app/watch/[showId]/         # player, synced transcript, chat, tangents, memory, provenance
+app/media/                  # library of shows and imported talks (legacy @mux/ai features)
+workflows/generate-show.ts  # the durable pipeline
+db/                         # Drizzle schema + migrations (0009 is the MiniMax Week schema)
+scripts/                    # gmi-smoke, autonomous-trend-agent, seed-templates, import-mux-assets
+public/brand/               # minimax.svg, gmi-cloud.svg
+DOCS/                       # submission, spend ledger, gmi-contracts (from the smoke script), rate limits
+tasks/                      # todo.md, lessons.md
 ```
 
 ---
 
 ## Database
 
-- **PostgreSQL + pgvector** — semantic search via embeddings
-- Tables: `videos`, `video_chunks` (embeddings), `rate_limits`, `feature_metrics`
-- Embeddings: Google `text-embedding-004` (768 dimensions)
-- HNSW index for cosine similarity search
+- PostgreSQL via Drizzle (`db/schema.ts`). No extensions: transcript search is a generated `tsvector` column with a GIN index on `video_chunks`.
+- Show pipeline tables: `show_templates`, `generated_shows` (format, status, `voice_assignments`, `theme_lyrics`, `credits_lyrics`, `music_prompt`, `engine_notes`, `local_render_path`, encrypted visitor key), `video_clips` (per clip: GMI request id, audio source, measured duration), `gmi_spend` (the H3 ledger), `chat_messages`, `show_tangents`, `user_memories`, `user_settings`.
+- Legacy talk tables: `videos`, `video_chunks`, `rate_limits`, `feature_metrics`.
 
 ---
 
-## Design System
+## Design system
 
-- **Brutalist aesthetic:** thick black borders, sharp corners, hard shadows
-- **Fonts:** Syne (headings), Space Mono (code/labels)
-- **Layer badges:** "PRIMITIVES", "WORKFLOWS", "CONNECTORS"
-- **Status UI:** inline progress indicators, not toasts
+- Brutalist: thick black borders, sharp corners, hard shadows. Syne for headings, Space Mono for labels and code.
+- Engine chips name the model and the service running each step; keep them truthful to `workflows/generate-show.ts`.
+- Brand marks in `public/brand/`: `minimax.svg` is coloured; `gmi-cloud.svg` fills with `currentColor` and is applied as a CSS mask (`GmiCloudWordmark` in `app/components/how-it-runs.tsx`) so it takes the text colour.
+- Status UI: inline progress indicators, not toasts. Failures show the stored reason verbatim.

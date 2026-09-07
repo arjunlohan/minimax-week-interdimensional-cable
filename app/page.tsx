@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { Footer } from "@/app/components/footer";
 import { Header } from "@/app/components/header";
-import { CloudFootprint, HowItRuns } from "@/app/components/how-it-runs";
+import { BuiltForMiniMaxWeek, GmiCloudWordmark, HowItRuns } from "@/app/components/how-it-runs";
 import { listShowSkills } from "@/app/lib/skills/registry";
 
 export default function Home() {
@@ -35,8 +35,8 @@ export default function Home() {
                 </h1>
 
                 <p className="max-w-2xl text-lg leading-relaxed text-foreground-muted md:text-xl">
-                  Pick a late-night format: investigative desk, political dissection, dual-anchor news, variety monologue, or long-form podcast.
-                  Give it any topic. An agent researches it, writes it, casts the voices, and produces the episode unattended.
+                  Pick a late-night format: investigative desk, political dissection, dual-anchor news, variety monologue, apocalyptic report, venture panel, or long-form podcast.
+                  Give it any topic. An agent researches it, writes it, casts the voices, renders the clips, scores the theme and sings the credits, unattended.
                 </p>
 
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -63,22 +63,19 @@ export default function Home() {
                     Running on
                   </span>
                   <span className="flex items-center gap-2">
-                    <img src="/google/vertex-ai.svg" alt="" aria-hidden="true" className="h-6 w-6" />
+                    <img src="/brand/minimax.svg" alt="" aria-hidden="true" className="h-6 w-6" />
                     <span className="text-sm font-bold" style={{ fontFamily: "var(--font-space-mono)" }}>
-                      Vertex AI
+                      MiniMax-M3 · MiniMax-H3 · Speech 2.8 HD · Music 3.0
                     </span>
                   </span>
                   <span className="flex items-center gap-2">
-                    <img src="/google/cloud-sql.svg" alt="" aria-hidden="true" className="h-6 w-6" />
-                    <span className="text-sm font-bold" style={{ fontFamily: "var(--font-space-mono)" }}>
-                      Cloud SQL
+                    <span
+                      className="text-xs font-bold uppercase tracking-[0.2em] text-foreground-muted"
+                      style={{ fontFamily: "var(--font-space-mono)" }}
+                    >
+                      served through
                     </span>
-                  </span>
-                  <span
-                    className="text-sm font-bold text-foreground-muted"
-                    style={{ fontFamily: "var(--font-space-mono)" }}
-                  >
-                    Gemini 3.7 Flash · Veo 3.1 · Gemini TTS
+                    <GmiCloudWordmark className="h-6 w-[74px]" />
                   </span>
                 </div>
               </div>
@@ -106,7 +103,7 @@ export default function Home() {
                   Pick a show
                 </h3>
                 <p className="text-sm leading-relaxed text-foreground-muted">
-                  Choose from talk show templates — each with unique host personalities, humor styles, and show formats.
+                  Choose a talk show format. Each has its own hosts, humor style and running order, and every host keeps one fixed voice.
                 </p>
               </div>
 
@@ -121,7 +118,7 @@ export default function Home() {
                   Give it a topic
                 </h3>
                 <p className="text-sm leading-relaxed text-foreground-muted">
-                  Paste a news link, Hacker News article, or just describe what you want the show to cover. The AI researches it deeply.
+                  Paste a news link or a Hacker News story, or describe what the show should cover. MiniMax-M3 reads the sources and researches the topic before a joke is written.
                 </p>
               </div>
 
@@ -136,7 +133,7 @@ export default function Home() {
                   Watch your episode
                 </h3>
                 <p className="text-sm leading-relaxed text-foreground-muted">
-                  The system generates a script, produces video clips, and stitches them into a watchable episode — complete with the host&apos;s personality.
+                  The pipeline writes the script, performs every line, renders the clips, scores the theme, sings the credits and publishes a watchable episode. Every step is named while it runs.
                 </p>
               </div>
             </div>
@@ -144,7 +141,7 @@ export default function Home() {
 
           <HowItRuns />
 
-          <CloudFootprint />
+          <BuiltForMiniMaxWeek />
 
           {/* Show Templates Preview */}
           <section>

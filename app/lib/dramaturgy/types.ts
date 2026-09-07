@@ -7,6 +7,13 @@ import type {
   TtsVoice,
 } from "@/app/lib/skills/types";
 
+/**
+ * What the episode is rendered as. Video plans one MiniMax-H3 clip per beat
+ * (8 to 12 s each); audio keeps the 8 s beat grid the podcast path has always
+ * used. Mirrors the `format` column on generated_shows.
+ */
+export type ShowOutputFormat = "video" | "audio";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Pass 1: Research Brief & Premise Seeds
 // ─────────────────────────────────────────────────────────────────────────────
@@ -121,7 +128,6 @@ export interface Pass1ResearchOutput {
   selectedAngle: ComedicPremiseAngle;
   isMocked: boolean;
   latencyMs: number;
-  rawResponse?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -235,6 +241,8 @@ export interface Pass2Input {
   researchBrief: ResearchBrief;
   skill: ShowSkill;
   durationSeconds: number;
+  /** Default "video". Decides how desk-show beats are sliced; podcast turns ignore it. */
+  format?: ShowOutputFormat;
   personalizationProfile?: PersonalizationContext;
   customInstructions?: string;
   options?: {
@@ -250,7 +258,7 @@ export interface Pass2Output {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Pass 3: Voice Tuning, Table-Read Critique & Pre-Flight RAI Safety
+// Pass 3: Voice Tuning, Table-Read Critique & Pre-Flight Content-Filter Safety
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface TableReadJokeEvaluation {
@@ -277,11 +285,11 @@ export interface TableReadReport {
   laughsPerMinute: number;
 }
 
-export interface VeoRaiSanitizationReport {
+export interface ContentFilterSanitizationReport {
   originalLength: number;
   sanitizedLength: number;
   replacementsApplied: Array<{ pattern: string; replacement: string }>;
-  isCleanForVeo: boolean;
+  isCleanForContentFilter: boolean;
 }
 
 export interface FinalScriptSegment {
@@ -313,7 +321,7 @@ export interface FinalScript {
     catchphrasesUsed: string[];
     outrageAffabilityScore?: number;
   };
-  sanitizationReport: VeoRaiSanitizationReport;
+  sanitizationReport: ContentFilterSanitizationReport;
 }
 
 export interface Pass3Input {
@@ -344,13 +352,14 @@ export interface DramaturgyInput {
   templateId?: string;
   skillIdOrSlug?: string;
   durationSeconds: number;
+  /** Default "video". See ShowOutputFormat. */
+  format?: ShowOutputFormat;
   familiarity?: "beginner" | "familiar" | "expert";
   userId?: string;
   language?: string;
   options?: {
     enableSearch?: boolean;
     forceMock?: boolean;
-    highThinkingLevel?: boolean;
     skipTableReadPrune?: boolean;
     temperature?: number;
   };

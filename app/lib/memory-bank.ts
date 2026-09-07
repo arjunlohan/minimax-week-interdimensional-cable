@@ -1,33 +1,22 @@
 import { asc, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import { z } from "zod";
 
 import { env } from "@/app/lib/env";
+import { generateJson } from "@/app/lib/gmi/text";
 import { resolveSkillForShow } from "@/app/lib/skills/registry";
 import type { ShowSkill } from "@/app/lib/skills/types";
 import * as schema from "@/db/schema";
 import type { ChatMessage, ShowTangent, UserMemory } from "@/db/schema";
 import { searchVideoChunks } from "@/db/search";
 
-import { MissingApiKeyError, resolveVertexKey } from "./api-keys";
-import { buildGenAIClient } from "./genai";
-
-import type { GoogleGenAI } from "@google/genai";
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Database & Gemini Client
+// Database
 // ─────────────────────────────────────────────────────────────────────────────
 
 const pool = new Pool({ connectionString: env.DATABASE_URL });
 const db = drizzle(pool, { schema });
-
-function getGenAIClient(): GoogleGenAI {
-  const apiKey = resolveVertexKey();
-  if (!apiKey) {
-    throw new MissingApiKeyError();
-  }
-  return buildGenAIClient(apiKey);
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -347,11 +336,12 @@ export async function getShowTangents(showId: string): Promise<ShowTangent[]> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tier 3: Semantic Memory (Google text-embedding-004 pgvector Grounding)
+// Tier 3: Semantic Memory (Postgres full-text search over transcript chunks)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Retrieves semantic memory via vector search on video transcript chunks.
+ * Retrieves semantic memory by full-text search over the imported talks'
+ * transcript chunks (tsvector + GIN index; no embedding model involved).
  */
 export async function getSemanticMemory(
   query: string,
@@ -466,7 +456,7 @@ export async function buildCognitiveMemoryBankContext(
 }
 
 /**
- * Builds personalized prompt instructions for Gemini when scripting, doing in-character banter, or answering Q&A.
+ * Builds personalized prompt instructions for MiniMax-M3 when scripting, doing in-character banter, or answering Q&A.
  */
 export async function buildPersonalizedPromptContext(
   userId: string,
@@ -588,9 +578,34 @@ export function topicToKey(topic: string): string {
 // Autonomous Memory Extraction (The Learning Engine)
 // ─────────────────────────────────────────────────────────────────────────────
 
+const MEMORY_TYPES = ["concept_mastery", "interest_topic", "humor_preference", "question_pattern", "custom_note"] as const;
+
+const ExtractedMemorySchema = z.object({
+  memoryType: z.enum(MEMORY_TYPES),
+  key: z.string().trim().min(1),
+  value: z.string().trim().min(1),
+  // A malformed confidence should not cost an otherwise good memory.
+  confidence: z.number().min(0).max(1).optional().catch(undefined),
+});
+
+export type ExtractedMemory = z.infer<typeof ExtractedMemorySchema>;
+
 /**
- * Autonomous Memory Extractor: Analyzes user interactions (questions, feedback, tangents)
- * using Gemini 3.7 Flash JSON mode and updates the user's persistent Memory Bank with reinforcement.
+ * The envelope MiniMax-M3 returns. Items the model got wrong (empty key,
+ * unknown type) are dropped one by one rather than failing the whole batch:
+ * memory is an enhancement, and one bad entry should not cost the rest.
+ */
+export const MemoryExtractionSchema = z.object({
+  memories: z.array(z.unknown()).nullish().transform(items =>
+    (items ?? []).flatMap((item): ExtractedMemory[] => {
+      const parsed = ExtractedMemorySchema.safeParse(item);
+      return parsed.success ? [parsed.data] : [];
+    })),
+});
+
+/**
+ * Autonomous Memory Extractor: analyzes user interactions (questions, feedback, tangents)
+ * with MiniMax-M3 structured output and updates the user's persistent Memory Bank with reinforcement.
  */
 export async function updateMemoryFromInteraction(
   userId: string,
@@ -600,10 +615,7 @@ export async function updateMemoryFromInteraction(
   showId?: string,
 ): Promise<void> {
   try {
-    const client = getGenAIClient();
-
-    const extractionPrompt = `You are the Memory Extraction Engine for an adaptive AI podcast network.
-Analyze the following interaction between a listener and the show assistant to extract persistent memories about the user.
+    const extractionPrompt = `Analyze the following interaction between a listener and the show assistant to extract persistent memories about the user.
 
 TOPIC: ${topic}
 USER MESSAGE: ${userMessage}
@@ -621,76 +633,56 @@ Extract any new or updated insights in the following JSON format:
   ]
 }
 
-Only extract meaningful, persistent facts or preferences. If nothing noteworthy is revealed, return {"memories": []}.
-Output valid JSON only.`;
+Only extract meaningful, persistent facts or preferences. If nothing noteworthy is revealed, return {"memories": []}.`;
 
-    const response = await client.models.generateContent({
-      model: "gemini-3.7-flash",
-      contents: [{ role: "user", parts: [{ text: extractionPrompt }] }],
-      config: {
-        responseMimeType: "application/json",
-      },
+    const { memories } = await generateJson({
+      schema: MemoryExtractionSchema,
+      label: "memory-extraction",
+      system: "You are the Memory Extraction Engine for an adaptive AI podcast network.",
+      prompt: extractionPrompt,
+      temperature: 0.2,
+      maxOutputTokens: 2048,
     });
 
-    const text = response.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) {
-      return;
-    }
+    for (const mem of memories) {
+      // Upsert or insert memory
+      const existing = await db
+        .select()
+        .from(schema.userMemories)
+        .where(eq(schema.userMemories.userId, userId));
 
-    const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-    const parsed = JSON.parse(cleaned) as {
-      memories?: Array<{
-        memoryType: "concept_mastery" | "interest_topic" | "humor_preference" | "question_pattern" | "custom_note";
-        key: string;
-        value: string;
-        confidence?: number;
-      }>;
-    };
+      const match = existing.find(e => e.key === mem.key && e.memoryType === mem.memoryType);
 
-    if (parsed.memories && Array.isArray(parsed.memories)) {
-      for (const mem of parsed.memories) {
-        if (!mem.key || !mem.value || !mem.memoryType) {
-          continue;
+      if (match) {
+        // If reinforcing existing concept mastery, boost confidence
+        let updatedConfidence = mem.confidence ?? 1.0;
+        if (mem.memoryType === "concept_mastery") {
+          const currentConf = match.confidence ?? 0.7;
+          updatedConfidence = calculateBoostedConfidence(currentConf);
         }
 
-        // Upsert or insert memory
-        const existing = await db
-          .select()
-          .from(schema.userMemories)
-          .where(eq(schema.userMemories.userId, userId));
-
-        const match = existing.find(e => e.key === mem.key && e.memoryType === mem.memoryType);
-
-        if (match) {
-          // If reinforcing existing concept mastery, boost confidence
-          let updatedConfidence = mem.confidence ?? 1.0;
-          if (mem.memoryType === "concept_mastery") {
-            const currentConf = match.confidence ?? 0.7;
-            updatedConfidence = calculateBoostedConfidence(currentConf);
-          }
-
-          await db
-            .update(schema.userMemories)
-            .set({
-              value: mem.value,
-              confidence: updatedConfidence,
-              sourceShowId: showId ?? null,
-              updatedAt: new Date(),
-            })
-            .where(eq(schema.userMemories.id, match.id));
-        } else {
-          await db.insert(schema.userMemories).values({
-            userId,
-            memoryType: mem.memoryType,
-            key: mem.key,
+        await db
+          .update(schema.userMemories)
+          .set({
             value: mem.value,
-            confidence: mem.confidence ?? 1.0,
+            confidence: updatedConfidence,
             sourceShowId: showId ?? null,
-          });
-        }
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.userMemories.id, match.id));
+      } else {
+        await db.insert(schema.userMemories).values({
+          userId,
+          memoryType: mem.memoryType,
+          key: mem.key,
+          value: mem.value,
+          confidence: mem.confidence ?? 1.0,
+          sourceShowId: showId ?? null,
+        });
       }
     }
   } catch (error) {
+    // Memory is an enhancement; never let it break the action that triggered it.
     console.error("[memory-bank] Memory extraction failed:", error);
   }
 }

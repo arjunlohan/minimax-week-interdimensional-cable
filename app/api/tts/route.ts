@@ -8,8 +8,9 @@ interface TtsRequestBody {
   transcript: string;
   hosts: TtsHost[];
   /**
-   * Per-turn breakdown of the transcript. Required for casts wider than two,
-   * which Gemini cannot voice in a single multi-speaker call.
+   * Per-turn breakdown of the transcript. MiniMax Speech 2.8 HD voices one
+   * speaker per request, so a multi-host show is synthesized a turn at a time;
+   * without segments the transcript is split on its "Speaker: line" labels.
    */
   segments?: Array<{ speaker: string; text: string }>;
   targetLang?: string;

@@ -43,7 +43,7 @@ export const closerLookSkill: ShowSkill = {
       "Which makes sense, because...",
       "Let me explain...",
     ],
-    ttsVoice: "Orus",
+    ttsVoice: "English_Persuasive_Man",
     acousticCuePreferences: ["[chuckles]", "[laughs]", "[deadpan]"],
   },
   hosts: [
@@ -51,7 +51,7 @@ export const closerLookSkill: ShowSkill = {
       name: "Seth Mires",
       role: "anchor",
       position: "center",
-      ttsVoice: "Orus",
+      ttsVoice: "English_Persuasive_Man",
       personaCraft:
         "Sharp, dry, cerebral head-writer delivery. Delivers surgical takedowns of news clips with knowing smiles, rapid-fire tags, and brief voice impressions. Pauses for effect and readily breaks into slight laughter at his own analogies.",
       personality:

@@ -551,9 +551,9 @@ This ordering builds the app layer-by-layer so the teaching progression is alway
   - [x] Add `app/lib/mux.ts` wrapper that exports the minimal read helpers we need (assets list/retrieve, playback ID extraction, audio track helpers)
   - [x] Add text track helpers (`getReadyTextTracks`, `findTextTrack`, `getTranscript`, `getTrackVtt`)
 - [x] **Connect to Postgres for persisted data**
-  - [x] Configure `DATABASE_URL` (Postgres + pgvector)
+  - [x] Configure `DATABASE_URL` (Postgres, no extensions)
   - [x] Run Drizzle migrations to create `videos` and `video_chunks`
-  - [x] Store asset metadata + embeddings to enable fast search and reduce repeated Mux API calls
+  - [x] Store asset metadata + transcript chunks (full-text search) to enable fast search and reduce repeated Mux API calls
 
 ### 1) Client-side workflow state (localStorage)
 

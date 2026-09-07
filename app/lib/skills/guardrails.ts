@@ -1,78 +1,116 @@
-import type { ShowSkill } from "./types";
+import { resolveVoiceId } from "@/app/lib/gmi/voices";
+
+import { TTS_VOICE_IDS } from "./types";
+import type { ShowSkill, TtsVoice } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Licensed Google Cloud Gemini TTS Prebuilt Voices
+// Licensed MiniMax Speech 2.8 HD System Voices
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const LICENSED_GEMINI_TTS_VOICES = [
-  "Charon",
-  "Orus",
-  "Puck",
-  "Fenrir",
-  "Aoede",
-  "Kore",
-  "Enceladus",
-] as const;
+/**
+ * The only voices a host may be synthesized with: MiniMax's own system voice
+ * catalog. Cloned or celebrity-derived voices are never licensed here, which is
+ * the identity guardrail the rest of this module enforces.
+ */
+export const LICENSED_MINIMAX_TTS_VOICES = TTS_VOICE_IDS;
 
-export type GeminiTtsVoice = typeof LICENSED_GEMINI_TTS_VOICES[number];
+export type MinimaxTtsVoice = TtsVoice;
+
+/** The voice a host falls back to when its template pins nothing usable. */
+export const DEFAULT_HOST_VOICE: MinimaxTtsVoice = "English_Persuasive_Man";
 
 export interface VoiceProfile {
-  voiceId: GeminiTtsVoice;
+  voiceId: MinimaxTtsVoice;
   timbre: string;
   resonance: "Low" | "Mid-Low" | "Mid" | "Mid-High" | "High";
   genderPresentation: "Male" | "Female" | "Neutral";
   idealPersonaAlignment: string;
 }
 
-export const LICENSED_VOICE_PROFILES: Record<GeminiTtsVoice, VoiceProfile> = {
-  Charon: {
-    voiceId: "Charon",
-    timbre: "British / Erudite, crisp consonant articulation, dry, authoritative cadence",
-    resonance: "Mid-Low",
-    genderPresentation: "Male",
-    idealPersonaAlignment: "Investigative Satirist, Deadpan Straight-Man News Anchor",
-  },
-  Orus: {
-    voiceId: "Orus",
-    timbre: "Measured, conversational American baritone, sharp punchlines, skeptical",
-    resonance: "Mid-Low",
-    genderPresentation: "Male",
-    idealPersonaAlignment: "Skeptical Head-Writer Monologist, Curious Podcast Host / Sounding Board",
-  },
-  Puck: {
-    voiceId: "Puck",
-    timbre: "Warm, energetic, slightly raspy, quick-witted, casual delivery",
-    resonance: "Mid-High",
-    genderPresentation: "Male",
-    idealPersonaAlignment: "Subversive Loose-Cannon Anchor, Esoteric Polymath Guest",
-  },
-  Fenrir: {
-    voiceId: "Fenrir",
-    timbre: "Grounded, booming, earnest curiosity, primal intensity",
+export const LICENSED_VOICE_PROFILES: Record<MinimaxTtsVoice, VoiceProfile> = {
+  English_magnetic_voiced_man: {
+    voiceId: "English_magnetic_voiced_man",
+    timbre: "Deep, magnetic desk-anchor delivery; crisp consonants, dry authoritative cadence",
     resonance: "Low",
+    genderPresentation: "Male",
+    idealPersonaAlignment: "Investigative Satirist, Deadpan Straight-Man News Anchor, Panel Lead with Gravitas",
+  },
+  English_Persuasive_Man: {
+    voiceId: "English_Persuasive_Man",
+    timbre: "Confident, wry conversational baritone that sells the punchline",
+    resonance: "Mid-Low",
+    genderPresentation: "Male",
+    idealPersonaAlignment: "Skeptical Head-Writer Monologist, Subversive Loose-Cannon Co-Anchor, Enthusiast Moderator",
+  },
+  English_Trustworth_Man: {
+    voiceId: "English_Trustworth_Man",
+    timbre: "Warm, steady, reassuring; the straight man's flat register",
+    resonance: "Mid",
+    genderPresentation: "Male",
+    idealPersonaAlignment: "Deadpan Operator, Straight Man, Fact-Checking Partner",
+  },
+  English_Aussie_Bloke: {
+    voiceId: "English_Aussie_Bloke",
+    timbre: "Laid-back, gruff Australian; earnest curiosity, tangent-prone",
+    resonance: "Mid-Low",
     genderPresentation: "Male",
     idealPersonaAlignment: "Speculative Explorer Podcast Host, Primal Inquirer",
   },
-  Aoede: {
-    voiceId: "Aoede",
-    timbre: "Bright, melodic, expressive, joyful, engaging comedic timing",
+  English_Insightful_Speaker: {
+    voiceId: "English_Insightful_Speaker",
+    timbre: "Measured, analytical, unhurried; explains rather than performs",
+    resonance: "Mid",
+    genderPresentation: "Neutral",
+    idealPersonaAlignment: "Science-Corner Sounding Board, Long-Timescale Reframer",
+  },
+  English_expressive_narrator: {
+    voiceId: "English_expressive_narrator",
+    timbre: "Expressive, wide-range narration with theatrical swing; carries a rant",
+    resonance: "Mid",
+    genderPresentation: "Neutral",
+    idealPersonaAlignment: "Apocalyptic Satirical Diatribist, Esoteric Polymath Guest",
+  },
+  English_Upbeat_Woman: {
+    voiceId: "English_Upbeat_Woman",
+    timbre: "Bright, fast, energetic; infectious comedic timing",
     resonance: "Mid-High",
     genderPresentation: "Female",
     idealPersonaAlignment: "High-Energy Variety Monologist, Cultural Commentator",
   },
-  Kore: {
-    voiceId: "Kore",
-    timbre: "Calm, journalistic clarity, grounded, steady broadcast pacing",
+  English_Graceful_Lady: {
+    voiceId: "English_Graceful_Lady",
+    timbre: "Poised, dry, elegant; steady broadcast pacing",
     resonance: "Mid",
     genderPresentation: "Female",
     idealPersonaAlignment: "Fact-Checking Co-Host, Deadpan Investigative Partner",
   },
-  Enceladus: {
-    voiceId: "Enceladus",
-    timbre: "Raspy, commanding, high-voltage satirical rant delivery, philosophical outrage",
+  English_radiant_girl: {
+    voiceId: "English_radiant_girl",
+    timbre: "Playful, quick, light; delighted by her own tangents",
+    resonance: "High",
+    genderPresentation: "Female",
+    idealPersonaAlignment: "Sidekick, Wildcard Guest",
+  },
+  English_captivating_female1: {
+    voiceId: "English_captivating_female1",
+    timbre: "Magnetic, deliberate, quietly intense",
+    resonance: "Mid-Low",
+    genderPresentation: "Female",
+    idealPersonaAlignment: "Contrarian Panellist, Noir Narrator",
+  },
+  English_compelling_lady1: {
+    voiceId: "English_compelling_lady1",
+    timbre: "Persuasive, warm, conversational",
     resonance: "Mid",
-    genderPresentation: "Male",
-    idealPersonaAlignment: "Apocalyptic Satirical Diatribist, Scorched-Earth Social Critic",
+    genderPresentation: "Female",
+    idealPersonaAlignment: "Podcast Host, Sounding Board",
+  },
+  English_Lucky_Robot: {
+    voiceId: "English_Lucky_Robot",
+    timbre: "Synthetic, clipped novelty voice",
+    resonance: "Mid-High",
+    genderPresentation: "Neutral",
+    idealPersonaAlignment: "Bumpers, Station Idents, Robot Correspondent",
   },
 };
 
@@ -81,30 +119,33 @@ export const LICENSED_VOICE_PROFILES: Record<GeminiTtsVoice, VoiceProfile> = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Checks whether a given string is an approved licensed Gemini TTS voice.
+ * Checks whether a given string is an approved licensed MiniMax system voice.
  */
-export function isLicensedGeminiVoice(voice: string): voice is GeminiTtsVoice {
-  return (LICENSED_GEMINI_TTS_VOICES as readonly string[]).includes(voice);
+export function isLicensedMinimaxVoice(voice: string): voice is MinimaxTtsVoice {
+  return (LICENSED_MINIMAX_TTS_VOICES as readonly string[]).includes(voice);
 }
 
 /**
- * Asserts that a voice string is a valid licensed Gemini TTS voice, throwing an error otherwise.
+ * Asserts that a voice string is a licensed MiniMax system voice, throwing an error otherwise.
  */
-export function assertLicensedGeminiVoice(voice: string, hostName?: string): void {
-  if (!isLicensedGeminiVoice(voice)) {
+export function assertLicensedMinimaxVoice(voice: string, hostName?: string): void {
+  if (!isLicensedMinimaxVoice(voice)) {
     const hostLabel = hostName ? ` for host "${hostName}"` : "";
     throw new Error(
-      `Illegal or unlicensed TTS voice "${voice}"${hostLabel}. Only licensed Google Cloud Gemini TTS voices are permitted: ${LICENSED_GEMINI_TTS_VOICES.join(", ")}.`,
+      `Illegal or unlicensed TTS voice "${voice}"${hostLabel}. Only licensed MiniMax Speech 2.8 HD system voices are permitted: ${LICENSED_MINIMAX_TTS_VOICES.join(", ")}.`,
     );
   }
 }
 
 /**
- * Resolves a host's TTS voice safely, falling back to a licensed default if unmapped.
+ * Resolves a host's TTS voice safely: a licensed id passes through, a voice
+ * name stored by a template before the MiniMax migration maps to its catalog
+ * equivalent, and anything else falls back to a licensed default.
  */
-export function resolveHostTtsVoice(voice?: string, fallback: GeminiTtsVoice = "Orus"): GeminiTtsVoice {
-  if (voice && isLicensedGeminiVoice(voice)) {
-    return voice;
+export function resolveHostTtsVoice(voice?: string, fallback: MinimaxTtsVoice = DEFAULT_HOST_VOICE): MinimaxTtsVoice {
+  const resolved = resolveVoiceId(voice);
+  if (resolved && isLicensedMinimaxVoice(resolved)) {
+    return resolved;
   }
   return fallback;
 }
@@ -127,7 +168,7 @@ export function generateSatiricalDisclaimer(
   return (
     `Generated by Interdimensional Cable AI Comedy Orchestrator (${showName}${topicSegment}). ` +
     `This production is an original satirical parody and comedic commentary executing dramaturgical craft and rhetorical format spines. ` +
-    `Audio synthesized exclusively using licensed Google Cloud Gemini TTS voices. Not affiliated with or endorsed by any living individual or network.`
+    `Audio synthesized exclusively using licensed MiniMax Speech 2.8 HD system voices. Not affiliated with or endorsed by any living individual or network.`
   );
 }
 
@@ -182,7 +223,7 @@ export interface GuardrailValidationResult {
 
 /**
  * Validates that a ShowSkill definition fully respects legal and identity guardrails:
- * 1. All host TTS voices are strictly from the licensed Gemini TTS pool.
+ * 1. All host TTS voices are strictly from the licensed MiniMax system voice pool.
  * 2. Host persona descriptions focus on rhetorical craft rather than biometric cloning.
  * 3. Visual style prompts describe broadcast caricatures rather than photorealistic deepfakes.
  */
@@ -194,9 +235,9 @@ export function validateSkillLegalGuardrails(skill: ShowSkill): GuardrailValidat
   }
 
   for (const host of skill.hosts ?? []) {
-    if (!isLicensedGeminiVoice(host.ttsVoice)) {
+    if (!isLicensedMinimaxVoice(host.ttsVoice)) {
       errors.push(
-        `Host "${host.name}" in skill "${skill.id}" specifies unlicensed TTS voice "${host.ttsVoice}". Must be one of: ${LICENSED_GEMINI_TTS_VOICES.join(", ")}.`,
+        `Host "${host.name}" in skill "${skill.id}" specifies unlicensed TTS voice "${host.ttsVoice}". Must be one of: ${LICENSED_MINIMAX_TTS_VOICES.join(", ")}.`,
       );
     }
 
