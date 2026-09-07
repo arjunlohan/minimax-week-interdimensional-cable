@@ -22,7 +22,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "gmi:smoke": "tsx scripts/gmi-smoke.ts",
-    "db:prepare-hosted": "bash scripts/prepare-hosted-db.sh"
+    "db:prepare-hosted": "bash scripts/prepare-hosted-db.sh",
+    "vercel:env-push": "bash scripts/vercel-env-push.sh"
   },
   "dependencies": {
     "@ai-sdk/gmicloud": "^3.0.15",

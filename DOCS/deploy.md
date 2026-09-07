@@ -17,13 +17,18 @@
 
 Pasting an `.env.example` block into the dashboard creates every name with an empty value, and once the project marks variables Sensitive nothing in the dashboard or `vercel env pull` can show that they are empty (they read back as `[SENSITIVE]`). The runtime tells the truth: `GET /api/health` reports each variable's `defined` flag and `length` (never the value). `defined: true, length: 0` means blank.
 
-The reliable way in is the CLI, which pushes the values straight from `.env.local` and never prints them (run from the repo, after `vercel link`):
+The reliable way in is the CLI, which pushes the values straight from `.env.local` and never prints them. Add two lines to `.env.local` (the hosted database URL and the deployment to rebuild), then run the script from a clean prompt (press Ctrl-C first if the shell shows a continuation prompt):
+
+```
+VERCEL_DATABASE_URL=postgresql://user:password@host/db?sslmode=require
+VERCEL_PRODUCTION_URL=https://<your-deployment>.vercel.app
+```
 
 ```bash
-for name in MUX_TOKEN_ID MUX_TOKEN_SECRET GMI_CLOUD_APIKEY; do grep "^$name=" .env.local | cut -d= -f2- | tr -d '"\n' | vercel env add "$name" production --force; done
-printf '%s' 'postgresql://user:password@host/db?sslmode=require' | vercel env add DATABASE_URL production --force
-vercel redeploy https://<your-deployment>.vercel.app
+npm run vercel:env-push
 ```
+
+It pushes MUX_TOKEN_ID, MUX_TOKEN_SECRET and GMI_CLOUD_APIKEY under their own names, VERCEL_DATABASE_URL as DATABASE_URL, and rebuilds production. `npm run vercel:env-push -- --dry-run` only reports which names have values.
 
 Then confirm `ok: true` at `/api/health` before opening `/create`.
 
