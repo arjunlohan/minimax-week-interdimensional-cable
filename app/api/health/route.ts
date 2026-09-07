@@ -43,11 +43,26 @@ export async function GET() {
   const database = await checkDatabase(process.env.DATABASE_URL);
   const ok = missing.length === 0 && database.ok;
 
+  // Names only, never values: enough to see whether the variables landed on
+  // this deployment under the expected names and environment.
+  const configuredNames = Object.keys(process.env)
+    .filter(name => /URL|MUX|GMI|KEY|SECRET|POSTGRES|PGHOST|PGUSER|PGDATABASE|H3_/i.test(name) && !/^(npm_|NEXT_|__)/.test(name))
+    .sort();
+  const deployment = {
+    environment: process.env.VERCEL_ENV ?? "local",
+    commit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? null,
+    branch: process.env.VERCEL_GIT_COMMIT_REF ?? null,
+    url: process.env.VERCEL_URL ?? null,
+    region: process.env.VERCEL_REGION ?? null,
+  };
+
   return NextResponse.json(
     {
       ok,
+      deployment,
       missingRequiredEnv: missing,
       optionalEnvPresent: optionalPresent,
+      configuredNames,
       database,
       hint: ok ? undefined : "See DOCS/deploy.md: add the variables in Vercel Project Settings and point DATABASE_URL at a migrated Postgres.",
     },
