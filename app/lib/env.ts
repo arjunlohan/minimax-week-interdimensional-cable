@@ -45,6 +45,11 @@ const EnvSchema = z.object({
   H3_MAX_REQUESTS_PER_RUN: optionalString("Maximum MiniMax-H3 requests a single show may issue (default 14)."),
   H3_SESSION_CAP_USD: optionalString("Maximum cumulative MiniMax-H3 spend recorded in this database, in USD (default 8)."),
 
+  // Where new shows render. "queue" leaves the row pending for a render worker
+  // (scripts/render-worker.ts) on a machine without a function timeout; unset
+  // or "workflow" starts the Vercel workflow in-process.
+  GENERATION_DISPATCH: optionalString("\"workflow\" (default) starts generation in-process; \"queue\" hands new shows to the render worker."),
+
   // Bring-your-own-key. On a public deployment the visitor supplies the GMI
   // Cloud key and GMI bills them directly, so strangers cannot spend the
   // owner's inference credits. Leave unset for local development.

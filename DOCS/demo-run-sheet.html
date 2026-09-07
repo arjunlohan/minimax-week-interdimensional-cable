@@ -1,0 +1,510 @@
+<title>Pixar Demo Run Sheet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Space+Mono:wght@400;700&family=Work+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground: #f1ede4;
+    --panel: #fbf9f4;
+    --ink: #141311;
+    --muted: #625c53;
+    --line: #141311;
+    --accent: #ee5a24;
+    --accent-ink: #fff7f2;
+    --soft: #e4ddcf;
+    --shadow: #141311;
+    --display: "Syne", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+    --mono: "Space Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --body: "Work Sans", "Helvetica Neue", Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #171512;
+      --panel: #201d19;
+      --ink: #f1ede4;
+      --muted: #a8a094;
+      --line: #f1ede4;
+      --soft: #2c2823;
+      --shadow: #000000;
+      --accent: #ff6a35;
+      --accent-ink: #1a0c05;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #171512;
+    --panel: #201d19;
+    --ink: #f1ede4;
+    --muted: #a8a094;
+    --line: #f1ede4;
+    --soft: #2c2823;
+    --shadow: #000000;
+    --accent: #ff6a35;
+    --accent-ink: #1a0c05;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 17px;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 32px 20px 80px; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  h1 {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: clamp(34px, 6vw, 58px);
+    line-height: 1;
+    letter-spacing: -0.02em;
+    margin: 8px 0 14px;
+    text-wrap: balance;
+  }
+  .lede { max-width: 62ch; color: var(--muted); margin: 0 0 28px; }
+  .lede strong { color: var(--ink); }
+
+  /* timer bar */
+  .bar {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px;
+    background: var(--panel);
+    border: 3px solid var(--line);
+    box-shadow: 6px 6px 0 var(--shadow);
+    padding: 12px 16px;
+    margin-bottom: 36px;
+  }
+  .clock {
+    font-family: var(--mono);
+    font-size: 30px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    min-width: 5ch;
+  }
+  .clock small { font-size: 13px; font-weight: 400; color: var(--muted); }
+  .now {
+    flex: 1 1 220px;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .now b { color: var(--accent); font-weight: 700; }
+  .btn {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: var(--panel);
+    color: var(--ink);
+    border: 3px solid var(--line);
+    padding: 8px 14px;
+    cursor: pointer;
+    box-shadow: 3px 3px 0 var(--shadow);
+  }
+  .btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--shadow); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--line); }
+  .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+  /* segments */
+  .seg {
+    display: grid;
+    grid-template-columns: 112px 1fr;
+    gap: 0 20px;
+    border-top: 3px solid var(--line);
+    padding: 22px 0 26px;
+  }
+  .seg.live { background: linear-gradient(90deg, var(--soft), transparent 60%); }
+  .seg .time {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.3;
+  }
+  .seg .time span { display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
+  .seg h2 {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 24px;
+    margin: 0 0 14px;
+    letter-spacing: -0.01em;
+  }
+  .tracks { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 18px; }
+  .track h3 {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 8px;
+  }
+  .screen ol { margin: 0; padding-left: 18px; font-size: 15px; }
+  .screen li { margin: 0 0 6px; }
+  .screen code, .caption code {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    background: var(--soft);
+    padding: 1px 5px;
+  }
+  .say p {
+    font-size: 21px;
+    line-height: 1.4;
+    font-weight: 500;
+    margin: 0 0 10px;
+    max-width: 34ch;
+    text-wrap: pretty;
+  }
+  .say .count { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: 0.08em; }
+  .caption { grid-column: 2; margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .caption .lab { font-family: var(--mono); font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
+  .chip {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    background: var(--ink);
+    color: var(--ground);
+    padding: 4px 9px;
+  }
+
+  /* lower sections */
+  .section { margin-top: 56px; }
+  .section h2 { font-family: var(--display); font-weight: 800; font-size: 28px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .section .sub { color: var(--muted); margin: 0 0 18px; max-width: 62ch; }
+  .post {
+    background: var(--panel);
+    border: 3px solid var(--line);
+    box-shadow: 6px 6px 0 var(--shadow);
+    padding: 16px 18px;
+    margin-bottom: 18px;
+  }
+  .post p { margin: 0 0 12px; font-size: 17px; }
+  .post .meta { display: flex; gap: 12px; align-items: center; font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: 0.06em; }
+  .check { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+  .check li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; }
+  .check input { width: 18px; height: 18px; margin: 4px 0 0; accent-color: var(--accent); }
+  .risk { display: grid; grid-template-columns: 1fr; gap: 12px; }
+  .risk div { border-left: 4px solid var(--accent); padding: 4px 0 4px 14px; }
+  .risk b { display: block; font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 4px; }
+  a { color: var(--ink); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+
+  @media (max-width: 720px) {
+    .seg { grid-template-columns: 1fr; }
+    .tracks { grid-template-columns: 1fr; }
+    .caption { grid-column: 1; }
+    .say p { font-size: 19px; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .seg { transition: background 300ms ease; }
+  }
+  @media print {
+    .bar { position: static; box-shadow: none; }
+    .btn { display: none; }
+  }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">Interdimensional Cable · MiniMax Week × GMI Cloud · screen demo for X</p>
+  <h1>Pixar Demo Run Sheet</h1>
+  <p class="lede">Three minutes, one episode, plain English. <strong>Say</strong> is what you speak, <strong>On screen</strong> is what you click, <strong>Caption</strong> is the text overlay for the 70% who watch muted. Speaking pace is about 2.5 words a second; every Say block already fits its window with room for clicks.</p>
+
+  <div class="bar" role="region" aria-label="Rehearsal timer">
+    <div class="clock" id="clock">0:00<small> / 3:00</small></div>
+    <div class="now" id="now">Press start and read along. The segment you should be in lights up.</div>
+    <button class="btn primary" id="startBtn" type="button">Start</button>
+    <button class="btn" id="resetBtn" type="button">Reset</button>
+  </div>
+
+  <section class="seg" data-start="0" data-end="12">
+    <div class="time">0:00 <span>to 0:12 · 12 s</span></div>
+    <div>
+      <h2>Cold open: the result first</h2>
+      <div class="tracks">
+        <div class="track screen">
+          <h3>On screen</h3>
+          <ol>
+            <li>The finished Pixar episode on its watch page, already playing. Pick the sharpest 5 seconds of the hosts arguing (the "Jobs still tried to sell gold?" exchange, or whatever lands best in your take).</li>
+            <li>Hard cut to you, or keep the page and talk over it.</li>
+          </ol>
+        </div>
+        <div class="track say">
+          <h3>Say</h3>
+          <p>Four AI hosts, arguing about Steve Jobs buying Pixar. No writer, no actors, no composer. I built this.</p>
+          <span class="count">18 words</span>
+        </div>
+      </div>
+      <div class="caption"><span class="lab">Caption</span><span class="chip">no writer · no actors · no composer</span></div>
+    </div>
+  </section>
+
+  <section class="seg" data-start="12" data-end="32">
+    <div class="time">0:12 <span>to 0:32 · 20 s</span></div>
+    <div>
+      <h2>The pitch, on the homepage</h2>
+      <div class="tracks">
+        <div class="track screen">
+          <h3>On screen</h3>
+          <ol>
+            <li>Homepage. Let the headline sit for a beat: <code>Your topic. Their personality. Your show.</code></li>
+            <li>Scroll to the strip: <code>Running on MiniMax-M3 · MiniMax-H3 · Speech 2.8 HD · Music 3.0</code> and <code>served through GMI Cloud</code>. Zoom on it in the edit.</li>
+          </ol>
+        </div>
+        <div class="track say">
+          <h3>Say</h3>
+          <p>This is Interdimensional Cable. Pick a show format, type a topic, and an agent does the rest: it researches, writes the script, casts the voices, scores a theme, and sings its own end credits.</p>
+          <p>Every model is MiniMax. All of it runs through one GMI Cloud key.</p>
+          <span class="count">46 words</span>
+        </div>
+      </div>
+      <div class="caption"><span class="lab">Caption</span><span class="chip">4 MiniMax models · 1 GMI Cloud key</span></div>
+    </div>
+  </section>
+
+  <section class="seg" data-start="32" data-end="60">
+    <div class="time">0:32 <span>to 1:00 · 28 s</span></div>
+    <div>
+      <h2>Make one, live</h2>
+      <div class="tracks">
+        <div class="track screen">
+          <h3>On screen</h3>
+          <ol>
+            <li><code>Create Show</code>. Step 1: click <code>All In Like</code> (four hosts listed under it). <code>Next</code>.</li>
+            <li>Step 2: type <code>Steve Jobs' investment in Pixar</code>. Let the <code>Detected: Free Text</code> dot appear. <code>Next</code>.</li>
+            <li>Step 3: <code>Audio episode · Speech 2.8 HD</code>, then <code>4 min · Deep Discussion</code>, then <code>New to this</code>. <code>Next</code>.</li>
+            <li>Step 4: the review blocks. <code>Create Show</code>.</li>
+          </ol>
+        </div>
+        <div class="track say">
+          <h3>Say</h3>
+          <p>Let's make one live. All In Like: four venture-panel hosts who never agree.</p>
+          <p>Topic: Steve Jobs buying Pixar. Audio episode, four minutes, deep discussion. And I'll say I'm new to this, so they explain it like I'm five.</p>
+          <p>Create.</p>
+          <span class="count">42 words</span>
+        </div>
+      </div>
+      <div class="caption"><span class="lab">Caption</span><span class="chip">All In Like · Steve Jobs × Pixar · 4 min</span></div>
+    </div>
+  </section>
+
+  <section class="seg" data-start="60" data-end="90">
+    <div class="time">1:00 <span>to 1:30 · 30 s</span></div>
+    <div>
+      <h2>It renders (time-lapse)</h2>
+      <div class="tracks">
+        <div class="track screen">
+          <h3>On screen</h3>
+          <ol>
+            <li>The progress page. Record the whole wait, then speed it to about 25 seconds in the edit. Keep the TV headline readable as it changes: <code>MiniMax-M3 is researching the topic...</code>, <code>writing the script...</code>, <code>Speech 2.8 HD is recording the episode...</code>, <code>Music 3.0 is scoring the theme and credits...</code>, <code>FFmpeg is assembling the episode...</code>, <code>Uploading to Mux...</code>, <code>Your show is ready!</code></li>
+            <li>Below it, the pipeline rows light up one by one with the <code>GMI Cloud</code> chip. Zoom there once.</li>
+          </ol>
+        </div>
+        <div class="track say">
+          <h3>Say</h3>
+          <p>Every step is its own checkpointed job, and the screen names the model doing it.</p>
+          <p>M3 reads real sources, then runs a three-pass writers' room. Speech 2.8 HD performs every line with an emotion tag. Music 3.0 writes a theme, and a song that sings the best jokes back at you.</p>
+          <p>About fifteen minutes in real life. Sped up.</p>
+          <span class="count">62 words</span>
+        </div>
+      </div>
+      <div class="caption"><span class="lab">Caption</span><span class="chip">real time: about 15 min</span></div>
+    </div>
+  </section>
+
+  <section class="seg" data-start="90" data-end="115">
+    <div class="time">1:30 <span>to 1:55 · 25 s</span></div>
+    <div>
+      <h2>Watch it</h2>
+      <div class="tracks">
+        <div class="track screen">
+          <h3>On screen</h3>
+          <ol>
+            <li>It redirects to the watch page. Press play from the top: 6 to 8 seconds of the theme song.</li>
+            <li>Jump to a good exchange, 8 seconds. Let the transcript highlight follow the audio; click one line to show it seeks.</li>
+          </ol>
+        </div>
+        <div class="track say">
+          <h3>Say</h3>
+          <p>That's the theme. M3 wrote it, Music 3.0 performed it. Then the hosts.</p>
+          <p>Each host has one fixed MiniMax voice, so Chamath always sounds like Chamath. The transcript follows along. Click a line, jump there.</p>
+          <span class="count">38 words</span>
+        </div>
+      </div>
+      <div class="caption"><span class="lab">Caption</span><span class="chip">theme: Music 3.0 · voices: Speech 2.8 HD</span></div>
+    </div>
+  </section>
+
+  <section class="seg" data-start="115" data-end="145">
+    <div class="time">1:55 <span>to 2:25 · 30 s</span></div>
+    <div>
+      <h2>Talk to the hosts</h2>
+      <div class="tracks">
+        <div class="track screen">
+          <h3>On screen</h3>
+          <ol>
+            <li>Open <code>Live Host Q&amp;A &amp; Tangents</code> (the <code>MiniMax-M3</code> tag sits on the header).</li>
+            <li>Type <code>Why did Jobs keep funding Pixar while it lost money?</code> and press <code>Ask</code>. Wait for the reply with its <code>✓ Memory Adapted</code> tag.</li>
+            <li>Press <code>🎙️ Voice</code> for the spoken version, or <code>+ Create 30s Audio Tangent ↗</code>. Play 5 seconds of it.</li>
+          </ol>
+        </div>
+        <div class="track say">
+          <h3>Say</h3>
+          <p>The episode doesn't end when it ends. Ask a host anything.</p>
+          <p>M3 answers in character, using the same research. Hit Voice and it says it out loud, in his voice. Or spin off a thirty-second audio tangent on whatever you're curious about.</p>
+          <span class="count">45 words</span>
+        </div>
+      </div>
+      <div class="caption"><span class="lab">Caption</span><span class="chip">ask · in character · out loud</span></div>
+    </div>
+  </section>
+
+  <section class="seg" data-start="145" data-end="165">
+    <div class="time">2:25 <span>to 2:45 · 20 s</span></div>
+    <div>
+      <h2>It remembers you</h2>
+      <div class="tracks">
+        <div class="track screen">
+          <h3>On screen</h3>
+          <ol>
+            <li>Scroll to <code>Agent Memory Bank</code> under the player. Point at the <code>Learned from</code> line, the <code>Tracked Interests</code> chips and <code>Learned Tone &amp; Humor</code>.</li>
+          </ol>
+        </div>
+        <div class="track say">
+          <h3>Say</h3>
+          <p>And it remembers you. Every request and every question feeds a memory bank: what you care about, how much you already know, what you laugh at.</p>
+          <p>The next episode, and the next answer, adapt to it.</p>
+          <span class="count">38 words</span>
+        </div>
+      </div>
+      <div class="caption"><span class="lab">Caption</span><span class="chip">memory bank · the next episode adapts</span></div>
+    </div>
+  </section>
+
+  <section class="seg" data-start="165" data-end="180">
+    <div class="time">2:45 <span>to 3:00 · 15 s</span></div>
+    <div>
+      <h2>The receipt, then the link</h2>
+      <div class="tracks">
+        <div class="track screen">
+          <h3>On screen</h3>
+          <ol>
+            <li>Scroll to <code>How this was made</code>: Research · MiniMax-M3, Script · MiniMax-M3, Voices · Speech 2.8 HD, Score · Music 3.0, State · Postgres, Delivery · Mux.</li>
+            <li>End card: the repo URL and <code>@gmi_cloud</code> <code>@MiniMax__AI</code>.</li>
+          </ol>
+        </div>
+        <div class="track say">
+          <h3>Say</h3>
+          <p>Every episode ships with its own receipt: which MiniMax model did what, all served through GMI Cloud.</p>
+          <p>It's open source, link below. Go make a show.</p>
+          <span class="count">27 words</span>
+        </div>
+      </div>
+      <div class="caption"><span class="lab">Caption</span><span class="chip">github.com/arjunlohan/minimax-week-interdimensional-cable</span></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>The post</h2>
+    <p class="sub">Two versions under 280 characters with the link counted at X's fixed 23. Attach the video to the post itself, not a reply; X ranks native video above links. Verify the MiniMax handle before posting.</p>
+    <div class="post">
+      <p id="postA">I built a late-night show that writes, voices, scores and sings itself. Type a topic, get an episode. Four @MiniMax__AI models on one @gmi_cloud key, made for MiniMax Week. Demo below, code here: https://github.com/arjunlohan/minimax-week-interdimensional-cable</p>
+      <div class="meta"><span>version A · about 245 characters</span><button class="btn" type="button" data-copy="postA">Copy</button></div>
+    </div>
+    <div class="post">
+      <p id="postB">Four AI hosts just argued about Steve Jobs buying Pixar for four minutes. Nobody wrote it, voiced it or scored it. MiniMax-M3, Speech 2.8 HD and Music 3.0 on @gmi_cloud, built for MiniMax Week with @MiniMax__AI. Open source: https://github.com/arjunlohan/minimax-week-interdimensional-cable</p>
+      <div class="meta"><span>version B · about 265 characters</span><button class="btn" type="button" data-copy="postB">Copy</button></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>Before you press record</h2>
+    <p class="sub">Everything here comes from what the site actually shows; nothing in the script points at a thing that is not on screen.</p>
+    <ul class="check">
+      <li><input type="checkbox" id="c1"><label for="c1">The render worker is running on your laptop (or you are recording the create step on localhost). Without it, a four-minute episode never finishes on Vercel: its functions stop at 300 seconds and Speech 2.8 alone can queue for five minutes a line.</label></li>
+      <li><input type="checkbox" id="c2"><label for="c2">The cold open needs a finished episode. Either use the one you generate on camera (you edit after it finishes anyway) or the 5-minute Pixar episode already rendered locally.</label></li>
+      <li><input type="checkbox" id="c3"><label for="c3">Record at 1080p, landscape. Hide bookmarks and other tabs. Slow cursor. Cuts every 3 to 5 seconds in the edit, zooms on the model strip, the pipeline rows and the memory card.</label></li>
+      <li><input type="checkbox" id="c4"><label for="c4">Captions on: burn in the eight caption chips above; most viewers on X watch muted.</label></li>
+      <li><input type="checkbox" id="c5"><label for="c5">Only open episodes made after the rebuild. Older ones label their engines "Pre-rebuild" in the receipt panel.</label></li>
+      <li><input type="checkbox" id="c6"><label for="c6">Do not open the Audio Dubbing panel or the /media/[slug] talk pages; they are not in the story and cost seconds.</label></li>
+      <li><input type="checkbox" id="c7"><label for="c7">Have the chat question typed in a note so you paste it. The suggested chips differ per episode, so do not script them.</label></li>
+    </ul>
+  </section>
+
+  <section class="section">
+    <h2>What can go wrong, and the fallback</h2>
+    <div class="risk">
+      <div><b>Speech queue stalls</b>A single line can sit in GMI's queue for five minutes. The worker waits it out, so the recording keeps running; you cut the wait anyway.</div>
+      <div><b>Music 3.0 rate limit</b>The theme and the credits sometimes hit the requests-per-minute cap. The pipeline resubmits automatically; it just adds a minute.</div>
+      <div><b>Facts in the script</b>The research step reads Hacker News sources; a 1986 story has few of them, so some lines will be comedy rather than history. Say "it reads real sources" rather than "every fact is checked".</div>
+      <div><b>A failed run on camera</b>The progress page shows a red Error box. Stop, fix, rerun: the create flow takes 30 seconds to redo and the edit hides the retake.</div>
+    </div>
+  </section>
+</div>
+
+<script>
+  (function () {
+    var TOTAL = 180;
+    var segs = Array.prototype.slice.call(document.querySelectorAll('.seg'));
+    var clock = document.getElementById('clock');
+    var now = document.getElementById('now');
+    var startBtn = document.getElementById('startBtn');
+    var resetBtn = document.getElementById('resetBtn');
+    var startedAt = null, elapsedBefore = 0, timer = null;
+
+    function fmt(s) { var m = Math.floor(s / 60), r = Math.floor(s % 60); return m + ':' + (r < 10 ? '0' : '') + r; }
+    function elapsed() { return elapsedBefore + (startedAt ? (Date.now() - startedAt) / 1000 : 0); }
+    function render() {
+      var e = elapsed();
+      clock.innerHTML = fmt(e) + '<small> / 3:00</small>';
+      var current = null;
+      segs.forEach(function (seg) {
+        var a = +seg.dataset.start, b = +seg.dataset.end;
+        var live = e >= a && e < b;
+        seg.classList.toggle('live', live);
+        if (live) current = seg;
+      });
+      if (e >= TOTAL) {
+        now.innerHTML = '<b>Time.</b> Three minutes are up; stop talking.';
+        stop();
+      } else if (current) {
+        var left = Math.max(0, +current.dataset.end - e);
+        now.innerHTML = 'Now: <b>' + current.querySelector('h2').textContent + '</b> · ' + Math.round(left) + ' s left in this segment';
+      }
+    }
+    function start() {
+      if (startedAt) return;
+      startedAt = Date.now();
+      startBtn.textContent = 'Pause';
+      timer = setInterval(render, 250);
+    }
+    function pause() {
+      if (!startedAt) return;
+      elapsedBefore = elapsed();
+      startedAt = null;
+      startBtn.textContent = 'Resume';
+      clearInterval(timer);
+      render();
+    }
+    function stop() { clearInterval(timer); startedAt = null; startBtn.textContent = 'Start'; }
+    startBtn.addEventListener('click', function () { startedAt ? pause() : start(); });
+    resetBtn.addEventListener('click', function () {
+      clearInterval(timer); startedAt = null; elapsedBefore = 0; startBtn.textContent = 'Start';
+      now.textContent = 'Press start and read along. The segment you should be in lights up.';
+      render();
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-copy]'), function (btn) {
+      btn.addEventListener('click', function () {
+        var text = document.getElementById(btn.dataset.copy).textContent;
+        var done = function () { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1500); };
+        if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(done, done); } else { done(); }
+      });
+    });
+    render();
+  })();
+</script>

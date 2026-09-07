@@ -14,6 +14,7 @@ import {
 import { env } from "@/app/lib/env";
 import { recordMemorySignal, topicToKey } from "@/app/lib/memory-bank";
 import { checkRateLimit, createRateLimitError, getClientIp } from "@/app/lib/rate-limit";
+import { generationDispatch } from "@/app/lib/render-worker";
 import * as schema from "@/db/schema";
 import type { ShowTemplate } from "@/db/schema";
 import { generateShowWorkflow } from "@/workflows/generate-show";
@@ -163,6 +164,13 @@ export async function createShowAction(formData: CreateShowInput): Promise<Creat
       value: `Prefers ${formData.format} episodes (${formData.durationSeconds}s), ${formData.familiarity} level`,
       sourceShowId: show.id,
     });
+
+    // With the render worker in charge, the row stays pending until the
+    // worker claims it; the progress page polls the same status column.
+    if (generationDispatch() === "queue") {
+      console.warn("[createShowAction] Queued for the render worker, showId:", show.id);
+      return { showId: show.id };
+    }
 
     // Start the generation workflow in-process. Calling our own route over
     // HTTP needed a public base URL and fell back to localhost on Vercel.

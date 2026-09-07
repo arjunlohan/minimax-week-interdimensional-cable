@@ -23,7 +23,9 @@
     "test:watch": "vitest",
     "gmi:smoke": "tsx scripts/gmi-smoke.ts",
     "db:prepare-hosted": "bash scripts/prepare-hosted-db.sh",
-    "vercel:env-push": "bash scripts/vercel-env-push.sh"
+    "vercel:env-push": "bash scripts/vercel-env-push.sh",
+    "dev:hosted": "DATABASE_URL=\"$(grep '^VERCEL_DATABASE_URL=' .env.local | cut -d= -f2-)\" next dev",
+    "worker": "tsx scripts/render-worker.ts"
   },
   "dependencies": {
     "@ai-sdk/gmicloud": "^3.0.15",

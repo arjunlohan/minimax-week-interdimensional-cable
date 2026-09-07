@@ -48,9 +48,22 @@ npm run db:prepare-hosted -- "postgresql://user:password@host/db?sslmode=require
 
 The script checks the connection first, applies the migrations and seeds the templates (or copies the local database), then lists the tables. If you use the Vercel CLI, `vercel link` followed by `vercel env pull .env.vercel.local` writes the injected `DATABASE_URL` to a local file you can copy from.
 
-## 3. Function duration
+## 3. Rendering: the render worker
 
-Each workflow step runs as one Vercel function invocation. Steps that wait on GMI's queues (a MiniMax-H3 clip can take minutes; Speech 2.8 lines have queued for over five) can run past Vercel's default 300 s limit, in which case the DevKit retries the step. For the hackathon the episodes are rendered from a local `npm run dev` and published to Mux, and the deployment serves the library, the watch pages, in-character chat and audio tangents. If you want generation on Vercel itself, raise the function `maxDuration` for the project (800 s on Pro) and prefer audio episodes.
+Each workflow step runs as one Vercel function invocation, and a function stops at 300 s. One Speech 2.8 line has waited over five minutes in GMI's queue, and a four-minute episode voices about fifty of them, so generation cannot finish on Vercel. The deployment therefore only queues shows, and a worker on a machine without a timeout renders them against the same database:
+
+1. On Vercel, set `GENERATION_DISPATCH=queue` (plain value). The create action inserts the row and returns; the progress page says "queued for the render worker" or "render worker offline" (a heartbeat the worker writes every 20 s), and the create page carries the same notice while no worker is up.
+2. On your machine, with `VERCEL_DATABASE_URL` in `.env.local`, run two processes:
+
+```bash
+npm run dev:hosted
+```
+
+```bash
+npm run worker
+```
+
+`dev:hosted` is `next dev` pointed at the hosted database; `worker` polls that database every 10 s, claims the oldest pending show (an atomic update on `workflow_run_id`), starts it on the local dev server, and lets the pipeline write the usual status column. Shows render one at a time. Leave `GENERATION_DISPATCH` unset locally so a show created on localhost starts in-process as before.
 
 ## 4. ffmpeg
 

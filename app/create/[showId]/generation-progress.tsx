@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { GeneratedShow, ShowTemplate } from "@/db/schema";
 
 import { pollShowStatusAction } from "./actions";
+import type { QueueState } from "./actions";
 import { generationSteps, POLL_INTERVAL } from "./constants";
 import type { GenerationStepId } from "./constants";
 import { TVLoading } from "./tv-loading";
@@ -56,10 +57,12 @@ export function GenerationProgress({ show, template }: GenerationProgressProps) 
   const router = useRouter();
   const [status, setStatus] = useState(show.status);
   const [error, setError] = useState<string | undefined>(show.error ?? undefined);
+  const [queue, setQueue] = useState<QueueState | undefined>(undefined);
 
   const poll = useCallback(async () => {
     const result = await pollShowStatusAction(show.id);
     setStatus(result.status);
+    setQueue(result.queue);
     if (result.error)
       setError(result.error);
 
@@ -99,6 +102,23 @@ export function GenerationProgress({ show, template }: GenerationProgressProps) 
 
       {/* Step Progress */}
       <div className="mx-auto max-w-xl">
+        {/* Waiting for the render worker. The site only queues the show; a
+            worker on a machine without a function timeout renders it. */}
+        {status === "pending" && queue && (
+          <div className={`mb-4 border-3 p-4 ${queue.workerOnline ? "border-border bg-surface-elevated" : "border-amber-600 bg-amber-50"}`}>
+            <div
+              className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted"
+              style={{ fontFamily: "var(--font-space-mono)" }}
+            >
+              {queue.workerOnline ? "Queued for the render worker" : "Render worker offline"}
+            </div>
+            <p className="text-sm text-foreground-muted">
+              {queue.workerOnline ?
+                `The worker checked in ${queue.workerSeenSecondsAgo ?? 0}s ago and picks this episode up next. Rendering happens off the web host because a single voice line can wait minutes in the queue.` :
+                "This episode is saved and starts the moment a render worker comes back online. Nothing is lost; you can leave this page and return."}
+            </p>
+          </div>
+        )}
         <div className="card-flat p-5">
           <div
             className="mb-4 text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted"

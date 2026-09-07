@@ -170,6 +170,7 @@ export function ChatPanel({ showId, topic, transcript, researchContext, hostName
               <div className="py-6 text-center text-sm text-foreground-muted space-y-1">
                 <p>
                   Ask
+                  {" "}
                   {hostName}
                   {" "}
                   anything about this episode.

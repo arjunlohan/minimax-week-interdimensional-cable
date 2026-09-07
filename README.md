@@ -127,6 +127,9 @@ npm run gmi:smoke            # prove access: M3 text + JSON, two Speech 2.8 voic
 npm run gmi:smoke -- --video # plus two 4 s MiniMax-H3 clips ($0.26), with and without references
 npm run gmi:smoke -- --voices # plus one line in every catalog voice
 npm run dev                  # http://localhost:3000
+npm run dev:hosted           # the same, pointed at VERCEL_DATABASE_URL (the deployed site's database)
+npm run worker               # the render worker: renders shows the deployed site queued (see DOCS/deploy.md)
+npm run vercel:env-push      # push the secrets from .env.local to the linked Vercel project, without printing them
 npm run agent:taskmaster     # the autonomous coordinator: Hacker News -> memory profile -> dispatch
 npm run import-mux-assets    # import existing Mux assets as browsable talks
 npm test                     # vitest
@@ -138,25 +141,22 @@ The smoke script appends what the platform actually returned (timings, durations
 
 ---
 
-## 3-minute demo shot list
+## 3-minute demo
 
-Judges stop watching at 3:00. Recorded with a real voice, not a synthesized one.
+The full run sheet, with what to click, what to say, captions for muted viewers, the X post and a rehearsal timer, is `DOCS/demo-run-sheet.html` (open it in a browser). The shape:
 
-| Time            | Shot                                                                                                                                                                                                               | Notes                                                                                                                                                                          |
-| :-------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **0:00 - 0:15** | **Cold open. No talking.** The hero episode full screen with the synced transcript beside it. Twelve seconds of actual comedy, with sound.                                                                         | Speak only over the tail: "Nobody wrote that, voiced it, filmed it or scored it. Four MiniMax models did, through GMI Cloud."                                                  |
-| **0:15 - 0:30** | **The stack, in-product.** The homepage: the "Running on" strip, then scroll "What runs when you press generate": eight stages, each naming its model and its service.                                             | The architecture, explained without a slide. "Every one of those is a checkpointed step. Here it is actually running."                                                         |
-| **0:30 - 1:05** | **One workflow, live.** Paste a Hacker News link on `/create`, pick the video format, hit generate, cut to the engine chips advancing: research, script, voices, clips, score, assembly, publish.                  | Narrate the engineering: a refused clip gets a rewritten line and a retry, the preflight refuses to spend render money it cannot store, the spend guard refuses past the caps. |
-| **1:05 - 1:15** | **Honest cut.** On-screen text, and say it aloud: "A 90 second episode renders in minutes, not seconds. Here is the same pipeline's output from earlier."                                                          | Never fake a real-time render.                                                                                                                                                 |
-| **1:15 - 1:40** | **The theme and the credits.** The title card with its theme hook, then jump to the end card: the credits sing the episode's three best jokes. Show the lyrics on the watch page's provenance panel.               | The originality shot. Let the song play.                                                                                                                                       |
-| **1:40 - 2:05** | **In-character chat, one continuous take.** Pause mid-episode. Type a question. The host answers in character, in its own Speech 2.8 voice. Trigger a 30-second audio tangent.                                     | Video, voice, text and synced transcript on one surface. Costs no H3 credit, so rehearse it freely.                                                                            |
-| **2:05 - 2:25** | **Memory that adapts and forgets.** The memory card: concept mastery moving beginner to intermediate, with confidence values.                                                                                      | "Confidence decays on an Ebbinghaus schedule, so a concept you asked about in March stops steering the show by August. The next script is written against this profile."       |
-| **2:25 - 2:45** | **The Taskmaster.** Terminal: `npm run agent:taskmaster`. It pulls live Hacker News, M3 ranks the stories against the memory profile, prints its routing reasoning, and dispatches the workflow. Zero human input. | "Agents that direct."                                                                                                                                                          |
-| **2:45 - 3:00** | **Close** on the homepage's "Built for MiniMax Week" section: model usage, usability, originality, each mapped to what the product does. One sentence, then stop.                                                  | The last frame is the rubric judges score against.                                                                                                                             |
+| Time | Beat | On screen |
+| :-- | :-- | :-- |
+| 0:00 | Cold open: the result first | A finished episode already playing; five seconds of the hosts arguing |
+| 0:12 | The pitch | Homepage headline and the "Running on MiniMax-M3 · MiniMax-H3 · Speech 2.8 HD · Music 3.0, served through GMI Cloud" strip |
+| 0:32 | Make one, live | `/create`: All In Like, "Steve Jobs' investment in Pixar", audio episode, 4 min, new to this, Create |
+| 1:00 | It renders (time-lapse) | The progress page naming each model as it works; the GMI Cloud chips light up |
+| 1:30 | Watch it | Theme song, one exchange, the transcript following |
+| 1:55 | Talk to the hosts | Live Host Q&A: a question, the in-character answer, the spoken reply or a 30 s tangent |
+| 2:25 | It remembers you | The Agent Memory Bank card |
+| 2:45 | The receipt, then the link | "How this was made", then the repo |
 
-**Overrun policy:** cut the memory card first, then the Taskmaster. Never cut the cold open, the live generation or the theme and credits.
-
-**Before recording:** free at least two Mux slots (the preflight hard-blocks generation when the plan is full), run `npm run gmi:smoke` so a platform outage does not surface on camera, and check `gmi_spend` against `H3_SESSION_CAP_USD` so the live run is not refused by your own guard.
+The create step on the deployed site queues the show for the render worker (`npm run worker` beside `npm run dev:hosted`), because a Vercel function stops at 300 s and a single voice line can wait five minutes in GMI's queue. Record the whole wait; the edit speeds it up.
 
 ---
 
