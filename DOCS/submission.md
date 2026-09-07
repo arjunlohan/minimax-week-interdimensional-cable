@@ -20,6 +20,7 @@ Interdimensional Cable turns any topic into a late-night comedy episode with no 
 
 - Repo: https://github.com/arjunlohan/minimax-week-interdimensional-cable
 - Hero episode: {{HERO_WATCH_URL}}
+- Audio episode (free models, 2:12): https://player.mux.com/9n00bwSpEQVU003A3v02r8PLMi5oOAv4p01lQNtqWSH2VlU
 - Demo video: {{DEMO_VIDEO_URL}}
 
 ## X post drafts

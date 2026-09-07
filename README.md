@@ -14,6 +14,8 @@ Pick a late-night format, give it a topic or a link, and a durable workflow rese
 
 **Spend for that episode:** {{HERO_SPEND}}
 
+**Audio episode on the free models (2:12):** https://player.mux.com/9n00bwSpEQVU003A3v02r8PLMi5oOAv4p01lQNtqWSH2VlU. Two hosts, nine turns voiced by Speech 2.8 HD with per-line emotion, an 8 s theme and a 15 s sung credits recap by Music 3.0, all written by MiniMax-M3 from a one-line topic about smart fridges joining botnets. No MiniMax-H3 request was needed, so it cost nothing.
+
 1. A title card with a theme hook Music 3.0 recorded for this episode, in the show's voice.
 2. The host, rendered by MiniMax-H3 from one portrait, delivering each line in a Speech 2.8 HD voice with the emotion the script asked for. Same face, same desk, same voice, every clip.
 3. Jokes written by MiniMax-M3 from sources it actually read, not from a vibe. The watch page lists them.
