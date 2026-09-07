@@ -1,9 +1,11 @@
 /* eslint-disable no-console */
+import { createHash } from "node:crypto";
 import fs from "node:fs";
+import path from "node:path";
 
 import { audioToWav, probeMedia } from "@/app/lib/media";
 
-import { downloadToBuffer, firstMediaUrl, runQueued, tmpPath } from "./queue";
+import { downloadToBuffer, firstMediaUrl, runQueued, tmpDir, tmpPath } from "./queue";
 
 import type { Buffer } from "node:buffer";
 
@@ -77,12 +79,68 @@ export function buildSpeechPayload(request: SpeechRequest): Record<string, unkno
   return payload;
 }
 
+/**
+ * Finished lines are kept on disk, keyed by the exact payload, so a durable
+ * step that is retried after one slow request does not pay the queue again for
+ * the lines it already has. GMI's speech queue has been observed to take
+ * anywhere from 20 s to over 5 min per line.
+ */
+const SPEECH_QUEUE_TIMEOUT_MS = 15 * 60_000;
+
+function speechCachePaths(payload: Record<string, unknown>, format: string): { audio: string; meta: string } {
+  const key = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+  const dir = path.join(tmpDir(), "speech-cache");
+  fs.mkdirSync(dir, { recursive: true });
+  return { audio: path.join(dir, `${key}.${format}`), meta: path.join(dir, `${key}.json`) };
+}
+
+interface CachedSpeechMeta {
+  remoteUrl: string;
+  requestId: string;
+  durationMs: number;
+}
+
+function readSpeechCache(payload: Record<string, unknown>, format: "mp3" | "flac"): SpeechResult | null {
+  const paths = speechCachePaths(payload, format);
+  if (!fs.existsSync(paths.audio) || !fs.existsSync(paths.meta)) {
+    return null;
+  }
+  try {
+    const meta = JSON.parse(fs.readFileSync(paths.meta, "utf8")) as CachedSpeechMeta;
+    const audio = fs.readFileSync(paths.audio);
+    if (audio.length === 0 || !meta.durationMs) {
+      return null;
+    }
+    return { audio, format, remoteUrl: meta.remoteUrl, requestId: meta.requestId, durationMs: meta.durationMs };
+  } catch {
+    return null;
+  }
+}
+
+function writeSpeechCache(payload: Record<string, unknown>, result: SpeechResult): void {
+  try {
+    const paths = speechCachePaths(payload, result.format);
+    fs.writeFileSync(paths.audio, result.audio);
+    const meta: CachedSpeechMeta = { remoteUrl: result.remoteUrl, requestId: result.requestId, durationMs: result.durationMs };
+    fs.writeFileSync(paths.meta, JSON.stringify(meta));
+  } catch (err) {
+    console.warn("[gmi:speech] Could not cache a line:", err instanceof Error ? err.message : String(err));
+  }
+}
+
 export async function synthesizeSpeech(request: SpeechRequest): Promise<SpeechResult> {
   const payload = buildSpeechPayload(request);
-  const record = await runQueued(SPEECH_MODEL_ID, payload, { pollMs: 2_000, timeoutMs: 5 * 60_000 });
+  const format = (request.format ?? "mp3");
+
+  const cached = readSpeechCache(payload, format);
+  if (cached) {
+    console.log(`[gmi:speech] cache hit for ${request.voiceId}: ${text_preview(request.text)} (${cached.durationMs} ms)`);
+    return cached;
+  }
+
+  const record = await runQueued(SPEECH_MODEL_ID, payload, { pollMs: 2_000, timeoutMs: SPEECH_QUEUE_TIMEOUT_MS });
   const remoteUrl = firstMediaUrl(record, "audio");
   const audio = await downloadToBuffer(remoteUrl);
-  const format = (request.format ?? "mp3");
 
   let durationMs = typeof record.outcome?.duration_ms === "number" ? record.outcome.duration_ms : 0;
   if (!durationMs) {
@@ -97,7 +155,9 @@ export async function synthesizeSpeech(request: SpeechRequest): Promise<SpeechRe
   }
 
   console.log(`[gmi:speech] ${request.voiceId}${request.emotion ? ` (${request.emotion})` : ""}: ${text_preview(request.text)} -> ${audio.length} bytes, ${durationMs} ms`);
-  return { audio, format, remoteUrl, requestId: record.request_id, durationMs };
+  const result: SpeechResult = { audio, format, remoteUrl, requestId: record.request_id, durationMs };
+  writeSpeechCache(payload, result);
+  return result;
 }
 
 /**
