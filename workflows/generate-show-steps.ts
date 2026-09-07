@@ -383,18 +383,37 @@ export async function scriptStepImpl(
  * perform it. Shared by the voices step and the content-revision path, which
  * must re-voice a rewritten line so the attached audio matches the prompt.
  */
+/**
+ * The modules a voiced line needs, loaded once per step. Loading them inside
+ * each line would issue the same dynamic imports concurrently when lines are
+ * voiced in parallel, which the test runner's module mocking cannot serve.
+ */
+interface VoiceDeps {
+  synthesizeSpeech: typeof import("@/app/lib/gmi/speech").synthesizeSpeech;
+  uploadToGmi: typeof import("@/app/lib/gmi/upload").uploadToGmi;
+  tmpPath: typeof import("@/app/lib/gmi/queue").tmpPath;
+  emotionForSegment: typeof import("@/app/lib/tts").emotionForSegment;
+  fs: typeof import("node:fs");
+}
+
+async function loadVoiceDeps(): Promise<VoiceDeps> {
+  const { synthesizeSpeech } = await import("@/app/lib/gmi/speech");
+  const { uploadToGmi } = await import("@/app/lib/gmi/upload");
+  const { tmpPath } = await import("@/app/lib/gmi/queue");
+  const { emotionForSegment } = await import("@/app/lib/tts");
+  const fs = await import("node:fs");
+  return { synthesizeSpeech, uploadToGmi, tmpPath, emotionForSegment, fs };
+}
+
 async function voiceLine(
   segment: TranscriptSegment,
   segmentIndex: number,
   assignments: Record<string, string>,
   hosts: Host[],
   strategy: AudioStrategy,
+  deps?: VoiceDeps,
 ): Promise<VoicedLine> {
-  const { synthesizeSpeech } = await import("@/app/lib/gmi/speech");
-  const { uploadToGmi } = await import("@/app/lib/gmi/upload");
-  const { tmpPath } = await import("@/app/lib/gmi/queue");
-  const { emotionForSegment } = await import("@/app/lib/tts");
-  const fs = await import("node:fs");
+  const { synthesizeSpeech, uploadToGmi, tmpPath, emotionForSegment, fs } = deps ?? await loadVoiceDeps();
 
   const voiceId = assignments[segment.speaker] ?? (hosts[0] ? assignments[hosts[0].name] : undefined) ?? Object.values(assignments)[0];
   if (!voiceId) {
@@ -465,7 +484,8 @@ export async function voicesStepImpl(
 
   const strategy = audioStrategyFrom(env.H3_AUDIO_STRATEGY);
   console.log(`[workflow:voices] Synthesizing ${segments.length} lines with Speech 2.8 HD (strategy: ${strategy})`);
-  const lines = await mapWithConcurrency(segments, VOICE_CONCURRENCY, (segment, i) => voiceLine(segment, i, assignments, hosts, strategy));
+  const voiceDeps = await loadVoiceDeps();
+  const lines = await mapWithConcurrency(segments, VOICE_CONCURRENCY, (segment, i) => voiceLine(segment, i, assignments, hosts, strategy, voiceDeps));
 
   await patchEngineNotes(db, schema, showId, {
     audioStrategy: strategy,
